@@ -1,29 +1,85 @@
-import { useState, useRef } from 'react';
-import { Building2, Phone, MapPin, ImagePlus, Trash2 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Building2, Phone, MapPin, ImagePlus, Trash2, Shield, LogOut } from 'lucide-react';
 import { PageHeader } from '../components/ui/Section';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Card from '../components/ui/Card';
 import InstituteLogo from '../components/ui/InstituteLogo';
 import { useSettings } from '../hooks/useData';
+import { useAuth } from '../hooks/useAuth';
 import { processLogoFile } from '../utils/logoHelpers';
 
 export default function Settings() {
   const { settings, updateSettings } = useSettings();
+  const { credentials, updateCredentials, logout } = useAuth();
+  const navigate = useNavigate();
   const [form, setForm] = useState({ ...settings });
+  const [accountForm, setAccountForm] = useState({
+    username: credentials.username,
+    email: credentials.email,
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  });
   const [message, setMessage] = useState('');
+  const [accountMessage, setAccountMessage] = useState('');
+  const [accountError, setAccountError] = useState('');
   const [logoError, setLogoError] = useState('');
   const [logoLoading, setLogoLoading] = useState(false);
+  const [accountSaving, setAccountSaving] = useState(false);
   const fileRef = useRef(null);
+
+  useEffect(() => {
+    setAccountForm((prev) => ({
+      ...prev,
+      username: credentials.username,
+      email: credentials.email,
+    }));
+  }, [credentials.username, credentials.email]);
 
   const showMessage = (text) => {
     setMessage(text);
     setTimeout(() => setMessage(''), 2500);
   };
 
+  const showAccountMessage = (text) => {
+    setAccountMessage(text);
+    setAccountError('');
+    setTimeout(() => setAccountMessage(''), 2500);
+  };
+
   const handleSave = () => {
     updateSettings(form);
     showMessage('Settings saved!');
+  };
+
+  const handleAccountSave = async () => {
+    setAccountError('');
+    setAccountSaving(true);
+
+    try {
+      const result = updateCredentials(accountForm);
+      if (!result.success) {
+        setAccountError(result.error);
+        return;
+      }
+
+      setAccountForm((prev) => ({
+        ...prev,
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+      }));
+      showAccountMessage('Account details updated successfully!');
+    } finally {
+      setAccountSaving(false);
+    }
+  };
+
+  const handleLogout = () => {
+    logout();
+    navigate('/login', { replace: true, state: null });
   };
 
   const handleLogoUpload = async (event) => {
@@ -64,6 +120,78 @@ export default function Settings() {
           {message}
         </div>
       )}
+
+      <Card>
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+            <Shield size={20} className="text-blue-600" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-800">Account Security</h3>
+            <p className="text-xs text-slate-500">Login username, email & password</p>
+          </div>
+        </div>
+
+        {accountMessage && (
+          <div className="bg-emerald-50 border border-emerald-100 text-emerald-700 text-sm font-medium px-4 py-3 rounded-xl mb-4">
+            {accountMessage}
+          </div>
+        )}
+
+        {accountError && (
+          <div className="bg-red-50 border border-red-100 text-red-700 text-sm font-medium px-4 py-3 rounded-xl mb-4">
+            {accountError}
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <Input
+            label="Username"
+            value={accountForm.username}
+            onChange={(e) => setAccountForm({ ...accountForm, username: e.target.value })}
+            autoComplete="username"
+          />
+          <Input
+            label="Email"
+            type="email"
+            value={accountForm.email}
+            onChange={(e) => setAccountForm({ ...accountForm, email: e.target.value })}
+            autoComplete="email"
+          />
+          <Input
+            label="Current Password"
+            type="password"
+            value={accountForm.currentPassword}
+            onChange={(e) => setAccountForm({ ...accountForm, currentPassword: e.target.value })}
+            placeholder="Required to save changes"
+            autoComplete="current-password"
+          />
+          <Input
+            label="New Password (optional)"
+            type="password"
+            value={accountForm.newPassword}
+            onChange={(e) => setAccountForm({ ...accountForm, newPassword: e.target.value })}
+            placeholder="Leave blank to keep current password"
+            autoComplete="new-password"
+          />
+          {accountForm.newPassword && (
+            <Input
+              label="Confirm New Password"
+              type="password"
+              value={accountForm.confirmPassword}
+              onChange={(e) => setAccountForm({ ...accountForm, confirmPassword: e.target.value })}
+              placeholder="Re-enter new password"
+              autoComplete="new-password"
+            />
+          )}
+          <Button fullWidth onClick={handleAccountSave} disabled={accountSaving}>
+            {accountSaving ? 'Saving...' : 'Save Account Changes'}
+          </Button>
+          <Button variant="outline" fullWidth onClick={handleLogout}>
+            <LogOut size={16} /> Logout
+          </Button>
+        </div>
+      </Card>
 
       <Card>
         <div className="flex items-center gap-3 mb-4">

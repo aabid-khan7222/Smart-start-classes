@@ -28,6 +28,9 @@ export const STORAGE_KEYS = {
   ATTENDANCE: 'smartstart_attendance',
   FEE_PAYMENTS: 'smartstart_fee_payments',
   SETTINGS: 'smartstart_settings',
+  AUTH: 'smartstart_auth',
+  SESSION: 'smartstart_session',
+  REMEMBER_ME: 'smartstart_remember_me',
 };
 
 export const NAV_ITEMS = [

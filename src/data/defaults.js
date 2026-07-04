@@ -5,6 +5,12 @@ export const defaultSettings = {
   logo: '',
 };
 
+export const defaultAuthCredentials = {
+  username: 'alfiya-shaikh',
+  email: 'alfiya@gmail.com',
+  password: 'alfiya@7222',
+};
+
 export const emptyStudent = {
   studentName: '',
   fatherName: '',

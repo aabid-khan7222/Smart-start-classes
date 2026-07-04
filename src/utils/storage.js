@@ -1,5 +1,5 @@
 import { STORAGE_KEYS } from './constants';
-import { defaultSettings } from '../data/defaults';
+import { defaultSettings, defaultAuthCredentials } from '../data/defaults';
 
 export function getFromStorage(key, fallback = []) {
   try {
@@ -47,6 +47,14 @@ export function saveSettings(settings) {
   saveToStorage(STORAGE_KEYS.SETTINGS, settings);
 }
 
+export function getAuthCredentials() {
+  return getFromStorage(STORAGE_KEYS.AUTH, defaultAuthCredentials);
+}
+
+export function saveAuthCredentials(auth) {
+  saveToStorage(STORAGE_KEYS.AUTH, auth);
+}
+
 export function exportBackup() {
   const backup = {
     version: 1,
@@ -55,6 +63,7 @@ export function exportBackup() {
     attendance: getAttendance(),
     feePayments: getFeePayments(),
     settings: getSettings(),
+    auth: getAuthCredentials(),
   };
   return JSON.stringify(backup, null, 2);
 }
@@ -68,6 +77,7 @@ export function importBackup(jsonString) {
   saveAttendance(backup.attendance);
   saveFeePayments(backup.feePayments);
   if (backup.settings) saveSettings(backup.settings);
+  if (backup.auth) saveAuthCredentials(backup.auth);
   return backup;
 }
 

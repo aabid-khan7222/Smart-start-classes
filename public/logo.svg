@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" fill="none">
+  <rect width="120" height="120" rx="24" fill="#1e3a8a"/>
+  <rect x="8" y="8" width="104" height="104" rx="20" fill="#2563eb"/>
+  <path d="M60 28L82 42V68C82 78 72 86 60 90C48 86 38 78 38 68V42L60 28Z" fill="white" fill-opacity="0.95"/>
+  <path d="M60 38L72 46V66C72 72 66 77 60 79C54 77 48 72 48 66V46L60 38Z" fill="#2563eb"/>
+  <rect x="54" y="54" width="12" height="18" rx="2" fill="white"/>
+  <circle cx="60" cy="48" r="4" fill="white"/>
+  <text x="60" y="108" text-anchor="middle" fill="white" font-family="Arial,sans-serif" font-size="14" font-weight="700">SSC</text>
+</svg>

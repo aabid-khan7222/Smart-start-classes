@@ -1,8 +1,8 @@
-import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { formatDate, formatMonth } from './dateHelpers';
 import { ATTENDANCE_STATUS } from './constants';
 import { getLogoForPdf, getDataUrlFormat } from './logoHelpers';
+import { MOBILE_PDF, createMobilePdf, getContentWidth } from './pdfLayout';
 
 const C = {
   navy: [30, 58, 138],
@@ -29,7 +29,7 @@ function drawFallbackLogo(doc, x, y, size) {
   doc.roundedRect(x + 1.2, y + 1.2, size - 2.4, size - 2.4, 2.5, 2.5, 'F');
   doc.setTextColor(...C.white);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(size * 1.1);
+  doc.setFontSize(MOBILE_PDF.fonts.boxTitle);
   doc.text('SSC', x + size / 2, y + size / 2 + 1.5, { align: 'center' });
 }
 
@@ -53,16 +53,16 @@ export function buildAttendanceReportFilename(student, month) {
 }
 
 function drawHeader(doc, pageWidth, margin, settings, month, reportId, logoDataUrl) {
-  const headerH = 46;
+  const logoSize = MOBILE_PDF.logoSize;
+  const headerH = 52;
   doc.setFillColor(...C.blueSoft);
   doc.rect(0, 0, pageWidth, headerH, 'F');
 
   doc.setFillColor(...C.blue);
   doc.rect(0, headerH - 1.2, pageWidth, 1.2, 'F');
 
-  const logoSize = 22;
   const logoX = margin;
-  const logoY = 12;
+  const logoY = 10;
 
   if (logoDataUrl) {
     doc.addImage(logoDataUrl, getDataUrlFormat(logoDataUrl), logoX, logoY, logoSize, logoSize);
@@ -70,44 +70,45 @@ function drawHeader(doc, pageWidth, margin, settings, month, reportId, logoDataU
     drawFallbackLogo(doc, logoX, logoY, logoSize);
   }
 
-  const textX = logoX + logoSize + 8;
+  const textX = logoX + logoSize + 5;
   const institute = settings?.className || 'Smart Start Classes';
 
   doc.setTextColor(...C.navy);
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(13);
-  doc.text(institute, textX, 20);
+  doc.setFontSize(MOBILE_PDF.fonts.institute);
+  doc.text(institute, textX, 18);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
+  doc.setFontSize(MOBILE_PDF.fonts.label);
   doc.setTextColor(...C.muted);
-  let infoY = 26;
+  let infoY = 24;
+  const contentWidth = getContentWidth();
   if (settings?.address) {
-    doc.text(settings.address, textX, infoY);
-    infoY += 4;
+    const lines = doc.splitTextToSize(settings.address, contentWidth - logoSize - 5);
+    doc.text(lines, textX, infoY);
+    infoY += lines.length * 4.5;
   }
   if (settings?.contact) {
     doc.text(`Tel: ${settings.contact}`, textX, infoY);
   }
 
-  const rightX = pageWidth - margin;
+  const badgeY = headerH - 14;
   doc.setFillColor(...C.white);
-  doc.roundedRect(rightX - 52, 11, 52, 24, 2, 2, 'F');
+  doc.roundedRect(margin, badgeY, contentWidth, 12, 2, 2, 'F');
   doc.setDrawColor(...C.border);
   doc.setLineWidth(0.2);
-  doc.roundedRect(rightX - 52, 11, 52, 24, 2, 2, 'S');
+  doc.roundedRect(margin, badgeY, contentWidth, 12, 2, 2, 'S');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
+  doc.setFontSize(MOBILE_PDF.fonts.section);
   doc.setTextColor(...C.navy);
-  doc.text('ATTENDANCE REPORT', rightX - 26, 18, { align: 'center' });
+  doc.text('ATTENDANCE REPORT', pageWidth / 2, badgeY + 5, { align: 'center' });
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
+  doc.setFontSize(MOBILE_PDF.fonts.label);
   doc.setTextColor(...C.sub);
-  doc.text(formatMonth(month), rightX - 26, 23, { align: 'center' });
-  doc.text(reportId, rightX - 26, 28, { align: 'center' });
+  doc.text(`${formatMonth(month)}  ·  ${reportId}`, pageWidth / 2, badgeY + 9.5, { align: 'center' });
 
-  return headerH + 10;
+  return headerH + 8;
 }
 
 function drawMetricBox(doc, x, y, w, h, label, value, accent) {
@@ -120,25 +121,50 @@ function drawMetricBox(doc, x, y, w, h, label, value, accent) {
   doc.rect(x, y + 2, w, 1.2, 'F');
 
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(MOBILE_PDF.fonts.summaryHighlight);
   doc.setTextColor(...C.text);
-  doc.text(String(value), x + w / 2, y + 12, { align: 'center' });
+  doc.text(String(value), x + w / 2, y + 13, { align: 'center' });
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(6.5);
+  doc.setFontSize(MOBILE_PDF.fonts.label);
   doc.setTextColor(...C.muted);
-  doc.text(label.toUpperCase(), x + w / 2, y + 17.5, { align: 'center' });
+  doc.text(label.toUpperCase(), x + w / 2, y + 19, { align: 'center' });
 }
 
 function sectionTitle(doc, margin, y, title) {
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
+  doc.setFontSize(MOBILE_PDF.fonts.section);
   doc.setTextColor(...C.navy);
   doc.text(title, margin, y);
   doc.setDrawColor(...C.blue);
   doc.setLineWidth(0.8);
   doc.line(margin, y + 2, margin + 28, y + 2);
   return y + 8;
+}
+
+function drawMetricGrid(doc, margin, y, stats) {
+  const contentWidth = getContentWidth();
+  const gap = 4;
+  const boxW = (contentWidth - gap) / 2;
+  const boxH = 24;
+
+  drawMetricBox(doc, margin, y, boxW, boxH, 'Present', stats.present, C.green);
+  drawMetricBox(doc, margin + boxW + gap, y, boxW, boxH, 'Absent', stats.absent, C.red);
+
+  const row2Y = y + boxH + gap;
+  drawMetricBox(doc, margin, row2Y, boxW, boxH, 'Total Days', stats.total, C.blue);
+  drawMetricBox(
+    doc,
+    margin + boxW + gap,
+    row2Y,
+    boxW,
+    boxH,
+    'Attendance',
+    `${stats.percentage.toFixed(1)}%`,
+    stats.percentage >= 75 ? C.green : stats.percentage >= 50 ? [217, 119, 6] : C.red
+  );
+
+  return row2Y + boxH;
 }
 
 export async function generateStudentAttendancePDF(student, records, month, settings) {
@@ -149,9 +175,10 @@ export async function generateStudentAttendancePDF(student, records, month, sett
   const sortedRecords = [...records].sort((a, b) => new Date(a.date) - new Date(b.date));
   const reportId = buildReportId(student, month);
 
-  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  const doc = createMobilePdf(360);
   const pageWidth = doc.internal.pageSize.getWidth();
-  const margin = 14;
+  const margin = MOBILE_PDF.margin;
+  const contentWidth = getContentWidth();
 
   let y = drawHeader(doc, pageWidth, margin, settings, month, reportId, logoDataUrl);
 
@@ -168,34 +195,44 @@ export async function generateStudentAttendancePDF(student, records, month, sett
       ['Batch Timing', student.batchTiming || '—'],
       ['Mobile Number', student.mobileNumber || '—'],
     ],
-    styles: { fontSize: 8.5, cellPadding: 3.2, textColor: C.text, lineColor: C.border, lineWidth: 0.2 },
-    headStyles: { fillColor: C.navy, textColor: C.white, fontStyle: 'bold', fontSize: 8 },
+    styles: {
+      fontSize: MOBILE_PDF.fonts.tableBody,
+      cellPadding: 3.5,
+      textColor: C.text,
+      lineColor: C.border,
+      lineWidth: 0.2,
+    },
+    headStyles: {
+      fillColor: C.navy,
+      textColor: C.white,
+      fontStyle: 'bold',
+      fontSize: MOBILE_PDF.fonts.tableHead,
+    },
     columnStyles: {
-      0: { cellWidth: 45, fontStyle: 'bold', textColor: C.sub },
-      1: { cellWidth: 'auto' },
+      0: { cellWidth: contentWidth * 0.38, fontStyle: 'bold', textColor: C.sub },
+      1: { cellWidth: contentWidth * 0.62 },
     },
   });
 
-  y = doc.lastAutoTable.finalY + 10;
-
-  const boxW = (pageWidth - margin * 2 - 9) / 4;
-  const boxH = 20;
-  drawMetricBox(doc, margin, y, boxW, boxH, 'Present', stats.present, C.green);
-  drawMetricBox(doc, margin + boxW + 3, y, boxW, boxH, 'Absent', stats.absent, C.red);
-  drawMetricBox(doc, margin + (boxW + 3) * 2, y, boxW, boxH, 'Total Days', stats.total, C.blue);
-  drawMetricBox(
-    doc,
-    margin + (boxW + 3) * 3,
-    y,
-    boxW,
-    boxH,
-    'Attendance',
-    `${stats.percentage.toFixed(1)}%`,
-    stats.percentage >= 75 ? C.green : stats.percentage >= 50 ? [217, 119, 6] : C.red
-  );
-
-  y += boxH + 12;
+  y = doc.lastAutoTable.finalY + MOBILE_PDF.gap;
+  y = drawMetricGrid(doc, margin, y, stats) + MOBILE_PDF.gap;
   y = sectionTitle(doc, margin, y, 'Daily Records');
+
+  const tableStyles = {
+    fontSize: MOBILE_PDF.fonts.tableBody,
+    cellPadding: 3.5,
+    textColor: C.text,
+    lineColor: C.border,
+    lineWidth: 0.15,
+  };
+
+  const tableHeadStyles = {
+    fillColor: C.navy,
+    textColor: C.white,
+    fontStyle: 'bold',
+    fontSize: MOBILE_PDF.fonts.tableHead,
+    halign: 'center',
+  };
 
   if (sortedRecords.length === 0) {
     autoTable(doc, {
@@ -204,8 +241,8 @@ export async function generateStudentAttendancePDF(student, records, month, sett
       theme: 'grid',
       head: [['#', 'Date', 'Day', 'Status', 'Reason']],
       body: [['—', '—', '—', 'No records for this month', '—']],
-      styles: { fontSize: 8.5, cellPadding: 3.2, lineColor: C.border },
-      headStyles: { fillColor: C.navy, textColor: C.white, fontStyle: 'bold', fontSize: 8 },
+      styles: tableStyles,
+      headStyles: tableHeadStyles,
     });
   } else {
     autoTable(doc, {
@@ -223,13 +260,13 @@ export async function generateStudentAttendancePDF(student, records, month, sett
           isPresent ? '—' : (record.reason || '—'),
         ];
       }),
-      styles: { fontSize: 8.5, cellPadding: 3.5, textColor: C.text, lineColor: C.border, lineWidth: 0.15 },
-      headStyles: { fillColor: C.navy, textColor: C.white, fontStyle: 'bold', fontSize: 8, halign: 'center' },
+      styles: tableStyles,
+      headStyles: tableHeadStyles,
       columnStyles: {
-        0: { halign: 'center', cellWidth: 12 },
-        1: { cellWidth: 34 },
-        2: { halign: 'center', cellWidth: 22 },
-        3: { halign: 'center', cellWidth: 26 },
+        0: { halign: 'center', cellWidth: 10 },
+        1: { cellWidth: 24 },
+        2: { halign: 'center', cellWidth: 16 },
+        3: { halign: 'center', cellWidth: 20 },
         4: { cellWidth: 'auto' },
       },
       alternateRowStyles: { fillColor: [249, 250, 251] },
@@ -242,12 +279,12 @@ export async function generateStudentAttendancePDF(student, records, month, sett
     });
   }
 
-  const footerY = doc.lastAutoTable.finalY + 12;
+  const footerY = doc.lastAutoTable.finalY + MOBILE_PDF.gap;
   doc.setDrawColor(...C.border);
   doc.line(margin, footerY, pageWidth - margin, footerY);
 
   doc.setFont('helvetica', 'normal');
-  doc.setFontSize(7.5);
+  doc.setFontSize(MOBILE_PDF.fonts.footer);
   doc.setTextColor(...C.muted);
   doc.text(
     `Generated on ${formatDate(new Date().toISOString().split('T')[0])}  ·  Computer-generated report`,

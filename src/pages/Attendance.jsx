@@ -20,17 +20,16 @@ import {
   normalizeAttendanceStatus,
 } from '../utils/attendanceHelpers';
 import { downloadStudentAttendancePDF } from '../utils/attendanceReportGenerator';
+import { useAlert } from '../context/AlertContext';
 
 export default function Attendance() {
   const { students } = useStudents();
   const { attendance, saveBulkAttendance } = useAttendance();
   const { settings } = useSettings();
+  const { showSuccess, showError } = useAlert();
   const [date, setDate] = useState(getToday());
   const [tab, setTab] = useState('daily');
   const [markData, setMarkData] = useState({});
-  const [saved, setSaved] = useState(false);
-  const [saveError, setSaveError] = useState('');
-  const [saveMessage, setSaveMessage] = useState('');
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [studentMonth, setStudentMonth] = useState(getCurrentMonth());
   const [absentModal, setAbsentModal] = useState({
@@ -39,7 +38,6 @@ export default function Attendance() {
     studentName: '',
     reason: '',
   });
-  const [reasonError, setReasonError] = useState('');
 
   const activeStudents = students.filter((s) => s.status === 'Active');
 
@@ -65,18 +63,14 @@ export default function Attendance() {
   const handleDateChange = (newDate) => {
     setDate(normalizeDate(newDate));
     setMarkData({});
-    setSaveError('');
-    setSaveMessage('');
   };
 
-  const showSavedFeedback = (message = 'Attendance saved!') => {
-    setSaveMessage(message);
-    setSaved(true);
-    setSaveError('');
-    setTimeout(() => {
-      setSaved(false);
-      setSaveMessage('');
-    }, 2000);
+  const showSavedFeedback = async (message = 'Attendance saved successfully!') => {
+    await showSuccess({
+      title: 'Saved!',
+      text: message,
+      autoCloseMs: 2000,
+    });
   };
 
   const persistStudentAttendance = (studentId, entry) => {
@@ -95,7 +89,8 @@ export default function Attendance() {
     );
   };
 
-  const setPresent = (studentId) => {
+  const setPresent = async (studentId) => {
+    const student = activeStudents.find((s) => s.id === studentId);
     const entry = { status: ATTENDANCE_STATUS.PRESENT, reason: '' };
     setMarkData((prev) => ({ ...prev, [studentId]: entry }));
 
@@ -105,15 +100,19 @@ export default function Attendance() {
         delete next[studentId];
         return next;
       });
-      showSavedFeedback();
+      await showSavedFeedback(
+        `${student?.studentName || 'Student'} marked as Present for ${formatDate(date)}.`
+      );
     } else {
-      setSaveError('Could not save attendance. Please try again.');
+      await showError({
+        title: 'Save Failed',
+        text: 'Could not save attendance. Please try again.',
+      });
     }
   };
 
   const openAbsentModal = (student) => {
     const existing = currentMarkData[student.id];
-    setReasonError('');
     setAbsentModal({
       open: true,
       studentId: student.id,
@@ -125,13 +124,15 @@ export default function Attendance() {
 
   const closeAbsentModal = () => {
     setAbsentModal({ open: false, studentId: null, studentName: '', reason: '' });
-    setReasonError('');
   };
 
-  const confirmAbsent = () => {
+  const confirmAbsent = async () => {
     const reason = absentModal.reason.trim();
     if (!reason) {
-      setReasonError('Please enter reason for absence');
+      await showError({
+        title: 'Validation Error',
+        text: 'Please enter reason for absence',
+      });
       return;
     }
     const entry = { status: ATTENDANCE_STATUS.ABSENT, reason };
@@ -146,15 +147,20 @@ export default function Attendance() {
         delete next[absentModal.studentId];
         return next;
       });
-      showSavedFeedback();
+      await showSavedFeedback(
+        `${absentModal.studentName} marked as Absent for ${formatDate(date)}.`
+      );
     } else {
-      setSaveError('Could not save attendance. Please try again.');
+      await showError({
+        title: 'Save Failed',
+        text: 'Could not save attendance. Please try again.',
+      });
     }
 
     closeAbsentModal();
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     const records = activeStudents
       .filter((s) => currentMarkData[s.id]?.status)
       .map((s) => {
@@ -167,18 +173,26 @@ export default function Attendance() {
       });
 
     if (records.length === 0) {
-      setSaveError('Mark at least one student before saving');
+      await showError({
+        title: 'Nothing to Save',
+        text: 'Mark at least one student before saving.',
+      });
       return;
     }
 
     const success = saveBulkAttendance(records, date);
     if (!success) {
-      setSaveError('Could not save attendance. Please try again.');
+      await showError({
+        title: 'Save Failed',
+        text: 'Could not save attendance. Please try again.',
+      });
       return;
     }
 
     setMarkData({});
-    showSavedFeedback(`Saved ${records.length} attendance record${records.length > 1 ? 's' : ''}!`);
+    await showSavedFeedback(
+      `${records.length} attendance record${records.length > 1 ? 's' : ''} saved for ${formatDate(date)}.`
+    );
   };
 
   const presentCount = Object.values(currentMarkData).filter((m) =>
@@ -264,9 +278,6 @@ export default function Attendance() {
                 <p className="text-[10px] font-semibold text-red-600">Absent</p>
               </div>
             </div>
-            {saveMessage && (
-              <p className="text-xs text-emerald-600 font-semibold text-center mt-2">{saveMessage}</p>
-            )}
           </Card>
 
           {activeStudents.length === 0 ? (
@@ -323,11 +334,8 @@ export default function Attendance() {
 
           {activeStudents.length > 0 && (
             <>
-              {saveError && (
-                <p className="text-xs text-red-600 font-medium text-center mb-2">{saveError}</p>
-              )}
-              <Button fullWidth size="lg" onClick={handleSave} variant={saved ? 'success' : 'primary'}>
-                <Save size={16} /> {saved ? 'Saved!' : 'Save All'}
+              <Button fullWidth size="lg" onClick={handleSave}>
+                <Save size={16} /> Save All
               </Button>
             </>
           )}
@@ -474,10 +482,8 @@ export default function Attendance() {
           value={absentModal.reason}
           onChange={(e) => {
             setAbsentModal((prev) => ({ ...prev, reason: e.target.value }));
-            setReasonError('');
           }}
           placeholder="Enter absence reason..."
-          error={reasonError}
         />
 
         <div className="flex gap-3 mt-5">

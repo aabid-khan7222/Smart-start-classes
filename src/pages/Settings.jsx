@@ -9,8 +9,10 @@ import InstituteLogo from '../components/ui/InstituteLogo';
 import { useSettings } from '../hooks/useData';
 import { useAuth } from '../hooks/useAuth';
 import { processLogoFile } from '../utils/logoHelpers';
+import { useAlert } from '../context/AlertContext';
 
 export default function Settings() {
+  const { showSuccess, showError, showConfirm } = useAlert();
   const { settings, updateSettings } = useSettings();
   const { credentials, updateCredentials, logout } = useAuth();
   const navigate = useNavigate();
@@ -22,10 +24,6 @@ export default function Settings() {
     newPassword: '',
     confirmPassword: '',
   });
-  const [message, setMessage] = useState('');
-  const [accountMessage, setAccountMessage] = useState('');
-  const [accountError, setAccountError] = useState('');
-  const [logoError, setLogoError] = useState('');
   const [logoLoading, setLogoLoading] = useState(false);
   const [accountSaving, setAccountSaving] = useState(false);
   const fileRef = useRef(null);
@@ -38,30 +36,24 @@ export default function Settings() {
     }));
   }, [credentials.username, credentials.email]);
 
-  const showMessage = (text) => {
-    setMessage(text);
-    setTimeout(() => setMessage(''), 2500);
-  };
-
-  const showAccountMessage = (text) => {
-    setAccountMessage(text);
-    setAccountError('');
-    setTimeout(() => setAccountMessage(''), 2500);
-  };
-
-  const handleSave = () => {
+  const handleSave = async () => {
     updateSettings(form);
-    showMessage('Settings saved!');
+    await showSuccess({
+      title: 'Settings Saved!',
+      text: 'Institute details updated successfully.',
+    });
   };
 
   const handleAccountSave = async () => {
-    setAccountError('');
     setAccountSaving(true);
 
     try {
       const result = updateCredentials(accountForm);
       if (!result.success) {
-        setAccountError(result.error);
+        await showError({
+          title: 'Validation Error',
+          text: result.error,
+        });
         return;
       }
 
@@ -71,7 +63,10 @@ export default function Settings() {
         newPassword: '',
         confirmPassword: '',
       }));
-      showAccountMessage('Account details updated successfully!');
+      await showSuccess({
+        title: 'Account Updated!',
+        text: 'Your login details have been saved successfully.',
+      });
     } finally {
       setAccountSaving(false);
     }
@@ -87,7 +82,6 @@ export default function Settings() {
     event.target.value = '';
     if (!file) return;
 
-    setLogoError('');
     setLogoLoading(true);
 
     try {
@@ -95,31 +89,42 @@ export default function Settings() {
       const updated = { ...form, logo };
       setForm(updated);
       updateSettings(updated);
-      showMessage('Logo uploaded successfully!');
+      await showSuccess({
+        title: 'Logo Uploaded!',
+        text: 'Your institute logo has been updated.',
+      });
     } catch (error) {
-      setLogoError(error.message || 'Could not upload logo');
+      await showError({
+        title: 'Upload Failed',
+        text: error.message || 'Could not upload logo',
+      });
     } finally {
       setLogoLoading(false);
     }
   };
 
-  const handleRemoveLogo = () => {
+  const handleRemoveLogo = async () => {
+    const confirmed = await showConfirm({
+      title: 'Remove Logo?',
+      text: 'Are you sure you want to remove your institute logo? The default logo will be used on login, browser tab, and receipts.',
+      confirmText: 'Yes, Remove',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) return;
+
     const updated = { ...form, logo: '' };
     setForm(updated);
     updateSettings(updated);
-    setLogoError('');
-    showMessage('Logo removed');
+    await showSuccess({
+      title: 'Logo Removed',
+      text: 'Default institute logo is now active.',
+    });
   };
 
   return (
     <div className="animate-fade-in space-y-5">
       <PageHeader title="Settings" subtitle="Manage your institute" showLogo={false} />
-
-      {message && (
-        <div className="bg-blue-50 border border-blue-100 text-blue-700 text-sm font-medium px-4 py-3 rounded-xl animate-scale-in">
-          {message}
-        </div>
-      )}
 
       <Card>
         <div className="flex items-center gap-3 mb-4">
@@ -131,18 +136,6 @@ export default function Settings() {
             <p className="text-xs text-slate-500">Login username, email & password</p>
           </div>
         </div>
-
-        {accountMessage && (
-          <div className="bg-emerald-50 border border-emerald-100 text-emerald-700 text-sm font-medium px-4 py-3 rounded-xl mb-4">
-            {accountMessage}
-          </div>
-        )}
-
-        {accountError && (
-          <div className="bg-red-50 border border-red-100 text-red-700 text-sm font-medium px-4 py-3 rounded-xl mb-4">
-            {accountError}
-          </div>
-        )}
 
         <div className="space-y-4">
           <Input
@@ -200,7 +193,7 @@ export default function Settings() {
           </div>
           <div>
             <h3 className="text-sm font-bold text-slate-800">Institute Logo</h3>
-            <p className="text-xs text-slate-500">Shown on dashboard, header & PDF receipts</p>
+            <p className="text-xs text-slate-500">Shown on login, browser tab, dashboard, header & PDF receipts</p>
           </div>
         </div>
 
@@ -212,15 +205,11 @@ export default function Settings() {
             </p>
             <p className="text-xs text-slate-500 mt-1">
               {form.logo
-                ? 'This logo appears across the app and all PDFs.'
+                ? 'This logo appears on login, browser tab, dashboard, and all PDFs.'
                 : 'Upload PNG, JPG or WEBP. Max 2MB.'}
             </p>
           </div>
         </div>
-
-        {logoError && (
-          <p className="text-xs text-red-600 font-medium mb-3">{logoError}</p>
-        )}
 
         <div className="flex gap-3">
           <Button

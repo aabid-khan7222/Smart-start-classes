@@ -10,10 +10,12 @@ import { getCurrentMonth, formatMonth } from '../utils/dateHelpers';
 import { getStudentFeeSummary, validatePaymentAmount } from '../utils/feeHelpers';
 import { formatCurrency } from '../utils/formatters';
 import { openAndDownloadReceipt } from '../utils/receiptGenerator';
+import { useAlert } from '../context/AlertContext';
 
 export default function FeePayment() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { showSuccess, showError } = useAlert();
   const { students } = useStudents();
   const { payments, addPayment } = useFees();
   const { settings } = useSettings();
@@ -30,7 +32,6 @@ export default function FeePayment() {
     remarks: '',
   });
   const [errors, setErrors] = useState({});
-  const [submitError, setSubmitError] = useState('');
 
   useEffect(() => {
     if (preselectedId) {
@@ -61,7 +62,6 @@ export default function FeePayment() {
   };
 
   const update = (field, value) => {
-    setSubmitError('');
     setErrors((prev) => ({ ...prev, [field]: undefined }));
 
     setForm((prev) => {
@@ -103,14 +103,21 @@ export default function FeePayment() {
     }
 
     setErrors(e);
-    return Object.keys(e).length === 0;
+    return { valid: Object.keys(e).length === 0, errors: e };
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitError('');
 
-    if (!validateForm()) return;
+    const validation = validateForm();
+    if (!validation.valid) {
+      const firstError = Object.values(validation.errors)[0];
+      await showError({
+        title: 'Validation Error',
+        text: firstError || 'Please check the form and try again.',
+      });
+      return;
+    }
 
     const result = addPayment({
       ...form,
@@ -118,8 +125,11 @@ export default function FeePayment() {
     });
 
     if (!result.success) {
-      setSubmitError(result.error);
       setErrors((prev) => ({ ...prev, amountPaid: result.error }));
+      await showError({
+        title: 'Validation Error',
+        text: result.error,
+      });
       return;
     }
 
@@ -137,6 +147,11 @@ export default function FeePayment() {
       }
     }
 
+    await showSuccess({
+      title: 'Payment Saved!',
+      text: `${formatCurrency(Number(form.amountPaid))} recorded for ${student?.studentName || 'student'}.`,
+    });
+
     navigate('/fees');
   };
 
@@ -149,12 +164,6 @@ export default function FeePayment() {
       </button>
 
       <h1 className="text-xl font-bold text-slate-900 mb-5">Record Payment</h1>
-
-      {submitError && (
-        <div className="mb-4 bg-red-50 border border-red-100 text-red-700 text-sm font-medium px-4 py-3 rounded-xl">
-          {submitError}
-        </div>
-      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <Select

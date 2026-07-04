@@ -7,16 +7,17 @@ import Card from '../components/ui/Card';
 import InstituteLogo from '../components/ui/InstituteLogo';
 import { useAuth } from '../hooks/useAuth';
 import { useSettings } from '../hooks/useData';
+import { useAlert } from '../context/AlertContext';
 
 export default function Login() {
   const { isAuthenticated, login, rememberMePreference } = useAuth();
   const { settings } = useSettings();
+  const { showError } = useAlert();
   const navigate = useNavigate();
 
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(rememberMePreference);
-  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   if (isAuthenticated) {
@@ -25,13 +26,15 @@ export default function Login() {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setError('');
     setLoading(true);
 
     try {
       const result = login(identifier, password, rememberMe);
       if (!result.success) {
-        setError(result.error);
+        await showError({
+          title: 'Login Failed',
+          text: result.error,
+        });
         return;
       }
       navigate('/', { replace: true });
@@ -65,12 +68,6 @@ export default function Login() {
               <p className="text-xs text-slate-500">Use your username or email</p>
             </div>
           </div>
-
-          {error && (
-            <div className="bg-red-50 border border-red-100 text-red-700 text-sm font-medium px-4 py-3 rounded-xl mb-4">
-              {error}
-            </div>
-          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <Input

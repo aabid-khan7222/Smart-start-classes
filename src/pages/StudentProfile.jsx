@@ -3,11 +3,10 @@ import { ArrowLeft, Edit, Trash2, Phone, MapPin, School, Clock, Calendar } from 
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
 import Badge from '../components/ui/Badge';
-import Modal from '../components/ui/Modal';
 import { Avatar, SectionHeader, ListItem } from '../components/ui/Section';
 import ReceiptActions from '../components/ui/ReceiptActions';
 import { useStudents, useFees, useAttendance, useSettings } from '../hooks/useData';
-import { useState } from 'react';
+import { useAlert } from '../context/AlertContext';
 import { getStudentFeeSummary, getStudentPaymentHistory } from '../utils/feeHelpers';
 import { calculateAttendancePercentage } from '../utils/attendanceHelpers';
 import { getCurrentMonth } from '../utils/dateHelpers';
@@ -36,7 +35,7 @@ export default function StudentProfile() {
   const { payments } = useFees();
   const { settings } = useSettings();
   const { attendance } = useAttendance();
-  const [showDelete, setShowDelete] = useState(false);
+  const { showConfirm, showSuccess } = useAlert();
 
   const student = getStudent(id);
   const month = getCurrentMonth();
@@ -55,8 +54,21 @@ export default function StudentProfile() {
   const attPct = calculateAttendancePercentage(attendance, student.id, [student]);
   const paymentHistory = getStudentPaymentHistory(student.id, payments);
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
+    const confirmed = await showConfirm({
+      title: 'Delete Student?',
+      text: `Are you sure you want to delete ${student.studentName}? This action cannot be undone.`,
+      confirmText: 'Yes, Delete',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) return;
+
     deleteStudent(id);
+    await showSuccess({
+      title: 'Deleted Successfully',
+      text: `${student.studentName} has been removed from your institute.`,
+    });
     navigate('/students');
   };
 
@@ -158,20 +170,10 @@ export default function StudentProfile() {
         <Button variant="outline" fullWidth onClick={() => navigate(`/students/${id}/edit`)}>
           <Edit size={16} /> Edit
         </Button>
-        <Button variant="danger" fullWidth onClick={() => setShowDelete(true)}>
+        <Button variant="danger" fullWidth onClick={handleDelete}>
           <Trash2 size={16} /> Delete
         </Button>
       </div>
-
-      <Modal isOpen={showDelete} onClose={() => setShowDelete(false)} title="Delete Student">
-        <p className="text-sm text-slate-600 mb-5">
-          Are you sure you want to delete <strong>{student.studentName}</strong>? This action cannot be undone.
-        </p>
-        <div className="flex gap-3">
-          <Button variant="outline" fullWidth onClick={() => setShowDelete(false)}>Cancel</Button>
-          <Button variant="danger" fullWidth onClick={handleDelete}>Delete</Button>
-        </div>
-      </Modal>
     </div>
   );
 }

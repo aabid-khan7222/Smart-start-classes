@@ -1,6 +1,8 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from './hooks/useAuth';
 import { DataProvider } from './hooks/useData';
+import { AlertProvider } from './context/AlertContext';
+import InstituteBranding from './components/InstituteBranding';
 import ProtectedRoute from './components/auth/ProtectedRoute';
 import MobileLayout from './components/layout/MobileLayout';
 import Login from './pages/Login';
@@ -18,7 +20,9 @@ export default function App() {
   return (
     <AuthProvider>
       <DataProvider>
-        <BrowserRouter>
+        <AlertProvider>
+          <InstituteBranding />
+          <BrowserRouter>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route element={<ProtectedRoute />}>
@@ -37,6 +41,7 @@ export default function App() {
             </Route>
           </Routes>
         </BrowserRouter>
+        </AlertProvider>
       </DataProvider>
     </AuthProvider>
   );

@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useSettings } from '../../hooks/useData';
 import { getInstituteInitials } from '../../utils/logoHelpers';
 
@@ -17,12 +18,18 @@ export default function InstituteLogo({
   const { settings: contextSettings } = useSettings();
   const settings = settingsProp || contextSettings;
   const initials = getInstituteInitials(settings?.className);
+  const [imgError, setImgError] = useState(false);
 
-  if (settings?.logo) {
+  useEffect(() => {
+    setImgError(false);
+  }, [settings?.logo]);
+
+  if (settings?.logo && !imgError) {
     return (
       <img
         src={settings.logo}
         alt={alt}
+        onError={() => setImgError(true)}
         className={`${SIZES[size]} rounded-xl object-contain bg-white border border-slate-100 shadow-sm shrink-0 ${className}`}
       />
     );

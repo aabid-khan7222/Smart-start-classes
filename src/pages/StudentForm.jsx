@@ -7,11 +7,13 @@ import Select from '../components/ui/Select';
 import { useStudents } from '../hooks/useData';
 import { STANDARDS, BATCH_TIMINGS, STUDENT_STATUS } from '../utils/constants';
 import { emptyStudent } from '../data/defaults';
+import { useAlert } from '../context/AlertContext';
 
 export default function StudentForm() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { getStudent, addStudent, updateStudent } = useStudents();
+  const { showSuccess, showError } = useAlert();
   const isEdit = Boolean(id);
   const existing = isEdit ? getStudent(id) : null;
 
@@ -33,22 +35,38 @@ export default function StudentForm() {
 
   const validate = () => {
     const e = {};
-    if (!form.studentName.trim()) e.studentName = 'Required';
-    if (!form.mobileNumber.trim()) e.mobileNumber = 'Required';
-    if (!form.monthlyFees) e.monthlyFees = 'Required';
+    if (!form.studentName.trim()) e.studentName = 'Student name is required';
+    if (!form.mobileNumber.trim()) e.mobileNumber = 'Mobile number is required';
+    if (!form.monthlyFees) e.monthlyFees = 'Monthly fees is required';
     setErrors(e);
-    return Object.keys(e).length === 0;
+    return { valid: Object.keys(e).length === 0, errors: e };
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!validate()) return;
+    const validation = validate();
+    if (!validation.valid) {
+      const firstError = Object.values(validation.errors)[0];
+      await showError({
+        title: 'Validation Error',
+        text: firstError || 'Please fill all required fields.',
+      });
+      return;
+    }
     const data = { ...form, monthlyFees: Number(form.monthlyFees), feeDueDate: Number(form.feeDueDate) };
     if (isEdit) {
       updateStudent(id, data);
+      await showSuccess({
+        title: 'Student Updated!',
+        text: `${form.studentName.trim()} details saved successfully.`,
+      });
       navigate(`/students/${id}`);
     } else {
       const student = addStudent(data);
+      await showSuccess({
+        title: 'Student Added!',
+        text: `${form.studentName.trim()} enrolled successfully.`,
+      });
       navigate(`/students/${student.id}`);
     }
   };

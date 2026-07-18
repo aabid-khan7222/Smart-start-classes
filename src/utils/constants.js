@@ -23,9 +23,20 @@ export const ATTENDANCE_STATUS = {
   ABSENT: 'absent',
 };
 
+export const HOLIDAY_TYPES = {
+  PUBLIC: 'public',
+  PERSONAL: 'personal',
+};
+
+export const HOLIDAY_TYPE_OPTIONS = [
+  { value: HOLIDAY_TYPES.PUBLIC, label: 'Public Holiday' },
+  { value: HOLIDAY_TYPES.PERSONAL, label: 'Personal / Tuition Closed' },
+];
+
 export const STORAGE_KEYS = {
   STUDENTS: 'smartstart_students',
   ATTENDANCE: 'smartstart_attendance',
+  HOLIDAYS: 'smartstart_holidays',
   FEE_PAYMENTS: 'smartstart_fee_payments',
   SETTINGS: 'smartstart_settings',
   AUTH: 'smartstart_auth',

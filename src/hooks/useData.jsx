@@ -8,6 +8,7 @@ import {
   normalizeAttendanceStatus,
   isSameStudentId,
 } from '../utils/attendanceHelpers';
+import { normalizeHolidayType } from '../utils/holidayHelpers';
 import { useSharedStore } from './useSharedStore';
 
 const DataContext = createContext(null);
@@ -17,6 +18,7 @@ export function DataProvider({ children }) {
 
   const students = store.students;
   const attendance = store.attendance;
+  const holidays = store.holidays || [];
   const payments = store.fee_payments;
   const settings = store.settings;
 
@@ -35,6 +37,16 @@ export function DataProvider({ children }) {
       persist((prev) => ({
         ...prev,
         attendance: typeof updater === 'function' ? updater(prev.attendance) : updater,
+      }));
+    },
+    [persist]
+  );
+
+  const setHolidays = useCallback(
+    (updater) => {
+      persist((prev) => ({
+        ...prev,
+        holidays: typeof updater === 'function' ? updater(prev.holidays || []) : updater,
       }));
     },
     [persist]
@@ -184,6 +196,53 @@ export function DataProvider({ children }) {
     [setAttendance]
   );
 
+  const addHoliday = useCallback(
+    (date, reason, type = 'public') => {
+      const normalizedDate = normalizeDate(date);
+      const trimmedReason = String(reason || '').trim();
+      if (!normalizedDate || !trimmedReason) {
+        return { success: false, error: 'Date and reason are required' };
+      }
+
+      let result = { success: true };
+
+      setHolidays((prev) => {
+        const exists = prev.some((h) => normalizeDate(h.date) === normalizedDate);
+        if (exists) {
+          result = { success: false, error: 'A holiday is already marked for this date' };
+          return prev;
+        }
+
+        const holiday = {
+          id: generateId(),
+          date: normalizedDate,
+          reason: trimmedReason,
+          type: normalizeHolidayType(type),
+        };
+        result = { success: true, holiday };
+        return [...prev, holiday];
+      });
+
+      return result;
+    },
+    [setHolidays]
+  );
+
+  const removeHoliday = useCallback(
+    (idOrDate) => {
+      const key = String(idOrDate || '');
+      if (!key) return false;
+
+      setHolidays((prev) =>
+        prev.filter(
+          (h) => h.id !== key && normalizeDate(h.date) !== normalizeDate(key)
+        )
+      );
+      return true;
+    },
+    [setHolidays]
+  );
+
   const addPayment = useCallback(
     (data) => {
       const student = students.find((s) => s.id === data.studentId);
@@ -250,6 +309,10 @@ export function DataProvider({ children }) {
       setAttendance,
       markAttendance,
       saveBulkAttendance,
+      holidays,
+      setHolidays,
+      addHoliday,
+      removeHoliday,
       payments,
       setPayments,
       addPayment,
@@ -269,6 +332,10 @@ export function DataProvider({ children }) {
       setAttendance,
       markAttendance,
       saveBulkAttendance,
+      holidays,
+      setHolidays,
+      addHoliday,
+      removeHoliday,
       payments,
       setPayments,
       addPayment,
@@ -303,6 +370,17 @@ export function useAttendance() {
     markAttendance: ctx.markAttendance,
     saveBulkAttendance: ctx.saveBulkAttendance,
     setAttendance: ctx.setAttendance,
+  };
+}
+
+export function useHolidays() {
+  const ctx = useContext(DataContext);
+  if (!ctx) throw new Error('useHolidays must be used within DataProvider');
+  return {
+    holidays: ctx.holidays,
+    addHoliday: ctx.addHoliday,
+    removeHoliday: ctx.removeHoliday,
+    setHolidays: ctx.setHolidays,
   };
 }
 

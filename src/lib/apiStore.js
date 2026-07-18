@@ -8,6 +8,7 @@ export function createEmptyStore() {
   return {
     students: [],
     attendance: [],
+    holidays: [],
     fee_payments: [],
     settings: { ...defaultSettings },
     auth: { ...defaultAuthCredentials },
@@ -21,6 +22,7 @@ export function normalizeStore(data) {
   return {
     students: Array.isArray(data.students) ? data.students : empty.students,
     attendance: Array.isArray(data.attendance) ? data.attendance : empty.attendance,
+    holidays: Array.isArray(data.holidays) ? data.holidays : empty.holidays,
     fee_payments: Array.isArray(data.fee_payments) ? data.fee_payments : empty.fee_payments,
     settings: { ...defaultSettings, ...(data.settings || {}) },
     auth: { ...defaultAuthCredentials, ...(data.auth || {}) },

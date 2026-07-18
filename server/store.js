@@ -9,6 +9,7 @@ const storePath = path.join(dataDir, 'store.json');
 const defaultStore = {
   students: [],
   attendance: [],
+  holidays: [],
   fee_payments: [],
   settings: {
     className: 'Smart Start Classes',
@@ -45,6 +46,7 @@ export function readStore() {
       auth: { ...defaultStore.auth, ...(parsed.auth || {}) },
       students: Array.isArray(parsed.students) ? parsed.students : [],
       attendance: Array.isArray(parsed.attendance) ? parsed.attendance : [],
+      holidays: Array.isArray(parsed.holidays) ? parsed.holidays : [],
       fee_payments: Array.isArray(parsed.fee_payments) ? parsed.fee_payments : [],
     };
   } catch {
@@ -57,6 +59,7 @@ export function writeStore(next) {
   const payload = {
     students: Array.isArray(next.students) ? next.students : [],
     attendance: Array.isArray(next.attendance) ? next.attendance : [],
+    holidays: Array.isArray(next.holidays) ? next.holidays : [],
     fee_payments: Array.isArray(next.fee_payments) ? next.fee_payments : [],
     settings: { ...defaultStore.settings, ...(next.settings || {}) },
     auth: { ...defaultStore.auth, ...(next.auth || {}) },

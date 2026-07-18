@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { CalendarCheck, Save, Download, UserX } from 'lucide-react';
+import { CalendarCheck, Save, Download, UserX, CalendarOff, Trash2 } from 'lucide-react';
 import { PageHeader } from '../components/ui/Section';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
@@ -8,9 +8,9 @@ import Modal from '../components/ui/Modal';
 import Input from '../components/ui/Input';
 import EmptyState from '../components/ui/EmptyState';
 import { Avatar } from '../components/ui/Section';
-import { useStudents, useAttendance, useSettings } from '../hooks/useData';
+import { useStudents, useAttendance, useSettings, useHolidays } from '../hooks/useData';
 import { getToday, formatDate, getCurrentMonth, formatMonth, getMonthFromDate, normalizeDate } from '../utils/dateHelpers';
-import { ATTENDANCE_STATUS } from '../utils/constants';
+import { ATTENDANCE_STATUS, HOLIDAY_TYPES, HOLIDAY_TYPE_OPTIONS } from '../utils/constants';
 import Select from '../components/ui/Select';
 import {
   getStudentAttendanceForDate,
@@ -19,14 +19,20 @@ import {
   isSameStudentId,
   normalizeAttendanceStatus,
 } from '../utils/attendanceHelpers';
+import {
+  getHolidayForDate,
+  getHolidaysForMonth,
+  getHolidayTypeLabel,
+} from '../utils/holidayHelpers';
 import { downloadStudentAttendancePDF } from '../utils/attendanceReportGenerator';
 import { useAlert } from '../context/AlertContext';
 
 export default function Attendance() {
   const { students } = useStudents();
   const { attendance, saveBulkAttendance } = useAttendance();
+  const { holidays, addHoliday, removeHoliday } = useHolidays();
   const { settings } = useSettings();
-  const { showSuccess, showError } = useAlert();
+  const { showSuccess, showError, showConfirm } = useAlert();
   const [date, setDate] = useState(getToday());
   const [tab, setTab] = useState('daily');
   const [markData, setMarkData] = useState({});
@@ -38,8 +44,22 @@ export default function Attendance() {
     studentName: '',
     reason: '',
   });
+  const [holidayModal, setHolidayModal] = useState({
+    open: false,
+    reason: '',
+    type: HOLIDAY_TYPES.PUBLIC,
+  });
 
   const activeStudents = students.filter((s) => s.status === 'Active');
+  const selectedHoliday = useMemo(
+    () => getHolidayForDate(holidays, date),
+    [holidays, date]
+  );
+  const isSelectedDateHoliday = Boolean(selectedHoliday);
+  const monthHolidays = useMemo(
+    () => getHolidaysForMonth(holidays, date.slice(0, 7)),
+    [holidays, date]
+  );
 
   const initializedMarkData = useMemo(() => {
     const data = {};
@@ -74,6 +94,8 @@ export default function Attendance() {
   };
 
   const persistStudentAttendance = (studentId, entry) => {
+    if (isSelectedDateHoliday) return false;
+
     const normalizedDate = normalizeDate(date);
     if (!normalizedDate || !studentId || !entry?.status) return false;
 
@@ -90,6 +112,14 @@ export default function Attendance() {
   };
 
   const setPresent = async (studentId) => {
+    if (isSelectedDateHoliday) {
+      await showError({
+        title: 'Holiday',
+        text: 'Attendance cannot be marked on a holiday. Remove the holiday first.',
+      });
+      return;
+    }
+
     const student = activeStudents.find((s) => s.id === studentId);
     const entry = { status: ATTENDANCE_STATUS.PRESENT, reason: '' };
     setMarkData((prev) => ({ ...prev, [studentId]: entry }));
@@ -112,6 +142,7 @@ export default function Attendance() {
   };
 
   const openAbsentModal = (student) => {
+    if (isSelectedDateHoliday) return;
     const existing = currentMarkData[student.id];
     setAbsentModal({
       open: true,
@@ -127,6 +158,11 @@ export default function Attendance() {
   };
 
   const confirmAbsent = async () => {
+    if (isSelectedDateHoliday) {
+      closeAbsentModal();
+      return;
+    }
+
     const reason = absentModal.reason.trim();
     if (!reason) {
       await showError({
@@ -160,7 +196,75 @@ export default function Attendance() {
     closeAbsentModal();
   };
 
+  const openHolidayModal = () => {
+    setHolidayModal({
+      open: true,
+      reason: selectedHoliday?.reason || '',
+      type: selectedHoliday?.type || HOLIDAY_TYPES.PUBLIC,
+    });
+  };
+
+  const closeHolidayModal = () => {
+    setHolidayModal({ open: false, reason: '', type: HOLIDAY_TYPES.PUBLIC });
+  };
+
+  const confirmHoliday = async () => {
+    const reason = holidayModal.reason.trim();
+    if (!reason) {
+      await showError({
+        title: 'Validation Error',
+        text: 'Please enter a reason for the holiday',
+      });
+      return;
+    }
+
+    const result = addHoliday(date, reason, holidayModal.type);
+    if (!result.success) {
+      await showError({
+        title: 'Could Not Save',
+        text: result.error || 'Failed to mark holiday.',
+      });
+      return;
+    }
+
+    setMarkData({});
+    closeHolidayModal();
+    await showSuccess({
+      title: 'Holiday Marked!',
+      text: `${formatDate(date)} marked as holiday — ${reason}.`,
+      autoCloseMs: 2500,
+    });
+  };
+
+  const handleRemoveHoliday = async () => {
+    if (!selectedHoliday) return;
+
+    const confirmed = await showConfirm({
+      title: 'Remove Holiday?',
+      text: `Remove holiday on ${formatDate(date)}? You will be able to mark attendance again.`,
+      confirmText: 'Yes, Remove',
+      cancelText: 'Cancel',
+    });
+
+    if (!confirmed) return;
+
+    removeHoliday(selectedHoliday.id);
+    await showSuccess({
+      title: 'Holiday Removed',
+      text: `${formatDate(date)} is open for attendance again.`,
+      autoCloseMs: 2000,
+    });
+  };
+
   const handleSave = async () => {
+    if (isSelectedDateHoliday) {
+      await showError({
+        title: 'Holiday',
+        text: 'Attendance cannot be marked on a holiday.',
+      });
+      return;
+    }
+
     const records = activeStudents
       .filter((s) => currentMarkData[s.id]?.status)
       .map((s) => {
@@ -268,19 +372,61 @@ export default function Attendance() {
               onChange={(e) => handleDateChange(e.target.value)}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             />
-            <div className="flex gap-3 mt-3">
-              <div className="flex-1 bg-emerald-50 rounded-xl p-2.5 text-center border border-emerald-100">
-                <p className="text-base font-bold text-emerald-700">{presentCount}</p>
-                <p className="text-[10px] font-semibold text-emerald-600">Present</p>
+
+            {isSelectedDateHoliday ? (
+              <div className="mt-3 rounded-xl bg-amber-50 border border-amber-200 p-3.5">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+                    <CalendarOff size={18} strokeWidth={2.25} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-bold text-amber-900">Holiday — Tuition Closed</p>
+                    <p className="text-xs text-amber-800 mt-0.5">{selectedHoliday.reason}</p>
+                    <p className="text-[10px] font-semibold text-amber-600 uppercase mt-1.5 tracking-wide">
+                      {getHolidayTypeLabel(selectedHoliday.type)}
+                    </p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  fullWidth
+                  className="mt-3 border-amber-300 text-amber-800 hover:bg-amber-100"
+                  onClick={handleRemoveHoliday}
+                >
+                  <Trash2 size={14} /> Remove Holiday
+                </Button>
               </div>
-              <div className="flex-1 bg-red-50 rounded-xl p-2.5 text-center border border-red-100">
-                <p className="text-base font-bold text-red-700">{absentCount}</p>
-                <p className="text-[10px] font-semibold text-red-600">Absent</p>
-              </div>
-            </div>
+            ) : (
+              <>
+                <div className="flex gap-3 mt-3">
+                  <div className="flex-1 bg-emerald-50 rounded-xl p-2.5 text-center border border-emerald-100">
+                    <p className="text-base font-bold text-emerald-700">{presentCount}</p>
+                    <p className="text-[10px] font-semibold text-emerald-600">Present</p>
+                  </div>
+                  <div className="flex-1 bg-red-50 rounded-xl p-2.5 text-center border border-red-100">
+                    <p className="text-base font-bold text-red-700">{absentCount}</p>
+                    <p className="text-[10px] font-semibold text-red-600">Absent</p>
+                  </div>
+                </div>
+                <Button
+                  variant="outline"
+                  fullWidth
+                  className="mt-3 border-amber-200 text-amber-800 hover:bg-amber-50"
+                  onClick={openHolidayModal}
+                >
+                  <CalendarOff size={16} /> Mark as Holiday
+                </Button>
+              </>
+            )}
           </Card>
 
-          {activeStudents.length === 0 ? (
+          {isSelectedDateHoliday ? (
+            <EmptyState
+              icon={CalendarOff}
+              title="Tuition closed"
+              description={`No attendance on ${formatDate(date)}. ${selectedHoliday.reason}`}
+            />
+          ) : activeStudents.length === 0 ? (
             <EmptyState icon={CalendarCheck} title="No active students" description="Add students to mark attendance" />
           ) : (
             <div className="space-y-3 mb-4">
@@ -332,12 +478,10 @@ export default function Attendance() {
             </div>
           )}
 
-          {activeStudents.length > 0 && (
-            <>
-              <Button fullWidth size="lg" onClick={handleSave}>
-                <Save size={16} /> Save All
-              </Button>
-            </>
+          {!isSelectedDateHoliday && activeStudents.length > 0 && (
+            <Button fullWidth size="lg" onClick={handleSave}>
+              <Save size={16} /> Save All
+            </Button>
           )}
         </>
       )}
@@ -352,6 +496,24 @@ export default function Attendance() {
               onChange={(e) => handleDateChange(`${e.target.value}-01`)}
               className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
             />
+            {monthHolidays.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <p className="text-[10px] font-semibold text-amber-600 uppercase tracking-wide mb-2">
+                  Holidays this month ({monthHolidays.length})
+                </p>
+                <div className="space-y-1.5">
+                  {monthHolidays.map((h) => (
+                    <div
+                      key={h.id}
+                      className="flex items-center justify-between gap-2 text-xs bg-amber-50 border border-amber-100 rounded-lg px-2.5 py-2"
+                    >
+                      <span className="font-semibold text-slate-700">{formatDate(h.date)}</span>
+                      <span className="text-amber-800 truncate text-right">{h.reason}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </Card>
 
           {monthlyReport.length === 0 ? (
@@ -507,6 +669,59 @@ export default function Attendance() {
             className="bg-red-600 text-white border-transparent shadow-lg shadow-red-600/20 active:bg-red-700"
           >
             Mark Absent
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal isOpen={holidayModal.open} onClose={closeHolidayModal} title="Mark Holiday">
+        <div className="flex items-start gap-3 mb-4 rounded-xl bg-amber-50/80 border border-amber-100 px-3.5 py-3">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <CalendarOff size={18} strokeWidth={2.25} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-900">Tuition Closed</p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Holiday on <span className="font-semibold text-slate-700">{formatDate(date)}</span>
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <Select
+            label="Holiday Type"
+            value={holidayModal.type}
+            onChange={(e) =>
+              setHolidayModal((prev) => ({ ...prev, type: e.target.value }))
+            }
+          >
+            {HOLIDAY_TYPE_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </Select>
+
+          <Input
+            label="Reason"
+            value={holidayModal.reason}
+            onChange={(e) =>
+              setHolidayModal((prev) => ({ ...prev, reason: e.target.value }))
+            }
+            placeholder="e.g. Diwali, Personal leave, Festival..."
+            autoFocus
+          />
+        </div>
+
+        <div className="flex gap-3 mt-5">
+          <Button variant="outline" fullWidth onClick={closeHolidayModal}>
+            Cancel
+          </Button>
+          <Button
+            fullWidth
+            onClick={confirmHoliday}
+            className="bg-amber-600 text-white border-transparent shadow-lg shadow-amber-600/20 active:bg-amber-700"
+          >
+            Mark Holiday
           </Button>
         </div>
       </Modal>

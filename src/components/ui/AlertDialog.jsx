@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { CheckCircle2, AlertTriangle, XCircle, Info } from 'lucide-react';
 import Button from './Button';
+import { lockBodyScroll, unlockBodyScroll } from '../../utils/scrollLock';
 
 const ICONS = {
   success: {
@@ -40,8 +41,7 @@ export default function AlertDialog({
   useEffect(() => {
     if (!isOpen) return undefined;
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll();
 
     const onKeyDown = (event) => {
       if (event.key === 'Escape' && showCancel) {
@@ -51,7 +51,7 @@ export default function AlertDialog({
 
     document.addEventListener('keydown', onKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      unlockBodyScroll();
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [isOpen, showCancel, onCancel]);

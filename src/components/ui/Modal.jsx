@@ -1,13 +1,13 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
+import { lockBodyScroll, unlockBodyScroll } from '../../utils/scrollLock';
 
 export default function Modal({ isOpen, onClose, title, children }) {
   useEffect(() => {
     if (!isOpen) return undefined;
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+    lockBodyScroll();
 
     const onKeyDown = (event) => {
       if (event.key === 'Escape') onClose?.();
@@ -15,7 +15,7 @@ export default function Modal({ isOpen, onClose, title, children }) {
 
     document.addEventListener('keydown', onKeyDown);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      unlockBodyScroll();
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [isOpen, onClose]);
@@ -29,7 +29,6 @@ export default function Modal({ isOpen, onClose, title, children }) {
       aria-modal="true"
       aria-labelledby="modal-title"
     >
-      {/* Solid dim overlay only — no backdrop-blur (breaks on many mobile browsers) */}
       <div
         className="absolute inset-0 bg-slate-900/55 animate-fade-in"
         onClick={onClose}

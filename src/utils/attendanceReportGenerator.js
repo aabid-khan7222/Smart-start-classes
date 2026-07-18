@@ -1,8 +1,11 @@
 import autoTable from 'jspdf-autotable';
-import { formatDate, formatMonth } from './dateHelpers';
+import { format, parseISO } from 'date-fns';
+import { formatDate, formatMonth, getDaysInMonth, normalizeDate } from './dateHelpers';
 import { ATTENDANCE_STATUS } from './constants';
 import { getLogoForPdf, getDataUrlFormat } from './logoHelpers';
 import { MOBILE_PDF, createMobilePdf, getContentWidth } from './pdfLayout';
+import { getHolidayForDate } from './holidayHelpers';
+import { isPresentStatus, isAbsentStatus, isSameStudentId } from './attendanceHelpers';
 
 const C = {
   navy: [30, 58, 138],
@@ -16,6 +19,28 @@ const C = {
   white: [255, 255, 255],
   green: [22, 163, 74],
   red: [220, 38, 38],
+  amber: [217, 119, 6],
+};
+
+export const DAY_STATUS = {
+  PRESENT: 'present',
+  ABSENT: 'absent',
+  HOLIDAY: 'holiday',
+  NOT_ADDED: 'not_added',
+};
+
+const STATUS_LABEL = {
+  [DAY_STATUS.PRESENT]: 'Present',
+  [DAY_STATUS.ABSENT]: 'Absent',
+  [DAY_STATUS.HOLIDAY]: 'Holiday',
+  [DAY_STATUS.NOT_ADDED]: 'Attendance not added',
+};
+
+const STATUS_COLOR = {
+  [DAY_STATUS.PRESENT]: C.green,
+  [DAY_STATUS.ABSENT]: C.red,
+  [DAY_STATUS.HOLIDAY]: C.amber,
+  [DAY_STATUS.NOT_ADDED]: C.muted,
 };
 
 async function loadLogoDataUrl(settings) {
@@ -39,12 +64,96 @@ function buildReportId(student, month) {
   return `ATT/${year}/${seq}`;
 }
 
-export function getStudentMonthAttendanceStats(records) {
-  const present = records.filter((r) => r.status === ATTENDANCE_STATUS.PRESENT).length;
-  const absent = records.filter((r) => r.status === ATTENDANCE_STATUS.ABSENT).length;
-  const total = records.length;
+function getWeekdayShort(dateStr) {
+  try {
+    return format(parseISO(normalizeDate(dateStr)), 'EEE');
+  } catch {
+    return '—';
+  }
+}
+
+/**
+ * Build one row per calendar day in the month.
+ * Priority: Holiday > Present/Absent > Attendance not added
+ */
+export function buildFullMonthAttendanceRows(month, records = [], holidays = [], studentId = null) {
+  const days = getDaysInMonth(month);
+  const studentRecords = (records || []).filter(
+    (r) => !studentId || isSameStudentId(r.studentId, studentId)
+  );
+
+  const byDate = new Map();
+  studentRecords.forEach((r) => {
+    const key = normalizeDate(r.date);
+    if (key) byDate.set(key, r);
+  });
+
+  return days.map((date) => {
+    const holiday = getHolidayForDate(holidays, date);
+    if (holiday) {
+      return {
+        date,
+        status: DAY_STATUS.HOLIDAY,
+        label: STATUS_LABEL[DAY_STATUS.HOLIDAY],
+        reason: holiday.reason || '—',
+      };
+    }
+
+    const record = byDate.get(date);
+    if (record && isPresentStatus(record.status)) {
+      return {
+        date,
+        status: DAY_STATUS.PRESENT,
+        label: STATUS_LABEL[DAY_STATUS.PRESENT],
+        reason: '—',
+      };
+    }
+    if (record && isAbsentStatus(record.status)) {
+      return {
+        date,
+        status: DAY_STATUS.ABSENT,
+        label: STATUS_LABEL[DAY_STATUS.ABSENT],
+        reason: record.reason || '—',
+      };
+    }
+
+    return {
+      date,
+      status: DAY_STATUS.NOT_ADDED,
+      label: STATUS_LABEL[DAY_STATUS.NOT_ADDED],
+      reason: '—',
+    };
+  });
+}
+
+export function getStudentMonthAttendanceStats(rowsOrRecords) {
+  const rows = Array.isArray(rowsOrRecords) ? rowsOrRecords : [];
+
+  // Full-month rows (have .label / DAY_STATUS)
+  if (rows.some((r) => r.status === DAY_STATUS.HOLIDAY || r.status === DAY_STATUS.NOT_ADDED || r.label)) {
+    const present = rows.filter((r) => r.status === DAY_STATUS.PRESENT).length;
+    const absent = rows.filter((r) => r.status === DAY_STATUS.ABSENT).length;
+    const holiday = rows.filter((r) => r.status === DAY_STATUS.HOLIDAY).length;
+    const notAdded = rows.filter((r) => r.status === DAY_STATUS.NOT_ADDED).length;
+    const marked = present + absent;
+    const percentage = marked > 0 ? (present / marked) * 100 : 0;
+    return {
+      present,
+      absent,
+      holiday,
+      notAdded,
+      total: rows.length,
+      marked,
+      percentage,
+    };
+  }
+
+  // Legacy: raw attendance records only
+  const present = rows.filter((r) => r.status === ATTENDANCE_STATUS.PRESENT || isPresentStatus(r.status)).length;
+  const absent = rows.filter((r) => r.status === ATTENDANCE_STATUS.ABSENT || isAbsentStatus(r.status)).length;
+  const total = rows.length;
   const percentage = total > 0 ? (present / total) * 100 : 0;
-  return { present, absent, total, percentage };
+  return { present, absent, holiday: 0, notAdded: 0, total, marked: total, percentage };
 }
 
 export function buildAttendanceReportFilename(student, month) {
@@ -144,38 +253,49 @@ function sectionTitle(doc, margin, y, title) {
 
 function drawMetricGrid(doc, margin, y, stats) {
   const contentWidth = getContentWidth();
-  const gap = 4;
+  const gap = 3.5;
   const boxW = (contentWidth - gap) / 2;
-  const boxH = 24;
+  const boxH = 22;
 
   drawMetricBox(doc, margin, y, boxW, boxH, 'Present', stats.present, C.green);
   drawMetricBox(doc, margin + boxW + gap, y, boxW, boxH, 'Absent', stats.absent, C.red);
 
   const row2Y = y + boxH + gap;
-  drawMetricBox(doc, margin, row2Y, boxW, boxH, 'Total Days', stats.total, C.blue);
+  drawMetricBox(doc, margin, row2Y, boxW, boxH, 'Holiday', stats.holiday, C.amber);
+  drawMetricBox(doc, margin + boxW + gap, row2Y, boxW, boxH, 'Not Added', stats.notAdded, C.muted);
+
+  const row3Y = row2Y + boxH + gap;
+  drawMetricBox(doc, margin, row3Y, boxW, boxH, 'Month Days', stats.total, C.blue);
   drawMetricBox(
     doc,
     margin + boxW + gap,
-    row2Y,
+    row3Y,
     boxW,
     boxH,
     'Attendance',
     `${stats.percentage.toFixed(1)}%`,
-    stats.percentage >= 75 ? C.green : stats.percentage >= 50 ? [217, 119, 6] : C.red
+    stats.percentage >= 75 ? C.green : stats.percentage >= 50 ? C.amber : C.red
   );
 
-  return row2Y + boxH;
+  return row3Y + boxH;
 }
 
-export async function generateStudentAttendancePDF(student, records, month, settings) {
+export async function generateStudentAttendancePDF(
+  student,
+  records,
+  month,
+  settings,
+  holidays = []
+) {
   if (!student) throw new Error('Student is required');
 
   const logoDataUrl = await loadLogoDataUrl(settings);
-  const stats = getStudentMonthAttendanceStats(records);
-  const sortedRecords = [...records].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const monthRows = buildFullMonthAttendanceRows(month, records, holidays, student.id);
+  const stats = getStudentMonthAttendanceStats(monthRows);
   const reportId = buildReportId(student, month);
 
-  const doc = createMobilePdf(360);
+  // ~28–31 day tables need a taller first page; autoTable still adds pages if needed
+  const doc = createMobilePdf(520);
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = MOBILE_PDF.margin;
   const contentWidth = getContentWidth();
@@ -220,7 +340,7 @@ export async function generateStudentAttendancePDF(student, records, month, sett
 
   const tableStyles = {
     fontSize: MOBILE_PDF.fonts.tableBody,
-    cellPadding: 3.5,
+    cellPadding: 2.8,
     textColor: C.text,
     lineColor: C.border,
     lineWidth: 0.15,
@@ -234,50 +354,39 @@ export async function generateStudentAttendancePDF(student, records, month, sett
     halign: 'center',
   };
 
-  if (sortedRecords.length === 0) {
-    autoTable(doc, {
-      startY: y,
-      margin: { left: margin, right: margin },
-      theme: 'grid',
-      head: [['#', 'Date', 'Day', 'Status', 'Reason']],
-      body: [['—', '—', '—', 'No records for this month', '—']],
-      styles: tableStyles,
-      headStyles: tableHeadStyles,
-    });
-  } else {
-    autoTable(doc, {
-      startY: y,
-      margin: { left: margin, right: margin },
-      theme: 'striped',
-      head: [['#', 'Date', 'Day', 'Status', 'Reason']],
-      body: sortedRecords.map((record, index) => {
-        const isPresent = record.status === ATTENDANCE_STATUS.PRESENT;
-        return [
-          String(index + 1).padStart(2, '0'),
-          formatDate(record.date),
-          new Date(record.date).toLocaleDateString('en-IN', { weekday: 'short' }),
-          isPresent ? 'Present' : 'Absent',
-          isPresent ? '—' : (record.reason || '—'),
-        ];
-      }),
-      styles: tableStyles,
-      headStyles: tableHeadStyles,
-      columnStyles: {
-        0: { halign: 'center', cellWidth: 10 },
-        1: { cellWidth: 24 },
-        2: { halign: 'center', cellWidth: 16 },
-        3: { halign: 'center', cellWidth: 20 },
-        4: { cellWidth: 'auto' },
-      },
-      alternateRowStyles: { fillColor: [249, 250, 251] },
-      didParseCell: (data) => {
-        if (data.section === 'body' && data.column.index === 3) {
-          data.cell.styles.fontStyle = 'bold';
-          data.cell.styles.textColor = data.cell.raw === 'Present' ? C.green : C.red;
+  autoTable(doc, {
+    startY: y,
+    margin: { left: margin, right: margin },
+    theme: 'striped',
+    head: [['#', 'Date', 'Day', 'Status', 'Reason']],
+    body: monthRows.map((row, index) => [
+      String(index + 1).padStart(2, '0'),
+      formatDate(row.date),
+      getWeekdayShort(row.date),
+      row.label,
+      row.reason || '—',
+    ]),
+    styles: tableStyles,
+    headStyles: tableHeadStyles,
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 9 },
+      1: { cellWidth: 22 },
+      2: { halign: 'center', cellWidth: 12 },
+      3: { cellWidth: 28 },
+      4: { cellWidth: 'auto' },
+    },
+    alternateRowStyles: { fillColor: [249, 250, 251] },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.column.index === 3) {
+        data.cell.styles.fontStyle = 'bold';
+        const row = monthRows[data.row.index];
+        data.cell.styles.textColor = STATUS_COLOR[row?.status] || C.muted;
+        if (row?.status === DAY_STATUS.NOT_ADDED) {
+          data.cell.styles.fontSize = 7.5;
         }
-      },
-    });
-  }
+      }
+    },
+  });
 
   const footerY = doc.lastAutoTable.finalY + MOBILE_PDF.gap;
   doc.setDrawColor(...C.border);
@@ -298,8 +407,20 @@ export async function generateStudentAttendancePDF(student, records, month, sett
   return { blob, filename, stats };
 }
 
-export async function downloadStudentAttendancePDF(student, records, month, settings) {
-  const { blob, filename } = await generateStudentAttendancePDF(student, records, month, settings);
+export async function downloadStudentAttendancePDF(
+  student,
+  records,
+  month,
+  settings,
+  holidays = []
+) {
+  const { blob, filename } = await generateStudentAttendancePDF(
+    student,
+    records,
+    month,
+    settings,
+    holidays
+  );
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

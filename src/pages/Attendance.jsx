@@ -23,8 +23,10 @@ import {
   getHolidayForDate,
   getHolidaysForMonth,
   getHolidayTypeLabel,
+  formatHolidayRangeLabel,
+  getHolidayRangeDayCount,
 } from '../utils/holidayHelpers';
-import { downloadStudentAttendancePDF } from '../utils/attendanceReportGenerator';
+import { downloadStudentAttendancePDF, buildFullMonthAttendanceRows, DAY_STATUS } from '../utils/attendanceReportGenerator';
 import { useAlert } from '../context/AlertContext';
 
 export default function Attendance() {
@@ -46,6 +48,8 @@ export default function Attendance() {
   });
   const [holidayModal, setHolidayModal] = useState({
     open: false,
+    startDate: getToday(),
+    endDate: getToday(),
     reason: '',
     type: HOLIDAY_TYPES.PUBLIC,
   });
@@ -199,17 +203,29 @@ export default function Attendance() {
   const openHolidayModal = () => {
     setHolidayModal({
       open: true,
+      startDate: date,
+      endDate: date,
       reason: selectedHoliday?.reason || '',
       type: selectedHoliday?.type || HOLIDAY_TYPES.PUBLIC,
     });
   };
 
   const closeHolidayModal = () => {
-    setHolidayModal({ open: false, reason: '', type: HOLIDAY_TYPES.PUBLIC });
+    setHolidayModal({
+      open: false,
+      startDate: getToday(),
+      endDate: getToday(),
+      reason: '',
+      type: HOLIDAY_TYPES.PUBLIC,
+    });
   };
 
   const confirmHoliday = async () => {
     const reason = holidayModal.reason.trim();
+    const startDate = normalizeDate(holidayModal.startDate);
+    const endDate = normalizeDate(holidayModal.endDate || holidayModal.startDate);
+    const dayCount = getHolidayRangeDayCount(startDate, endDate);
+
     if (!reason) {
       await showError({
         title: 'Validation Error',
@@ -218,7 +234,15 @@ export default function Attendance() {
       return;
     }
 
-    const result = addHoliday(date, reason, holidayModal.type);
+    if (!dayCount) {
+      await showError({
+        title: 'Validation Error',
+        text: 'End date cannot be before start date',
+      });
+      return;
+    }
+
+    const result = addHoliday(startDate, reason, holidayModal.type, endDate);
     if (!result.success) {
       await showError({
         title: 'Could Not Save',
@@ -229,9 +253,18 @@ export default function Attendance() {
 
     setMarkData({});
     closeHolidayModal();
+
+    const skippedNote =
+      result.skipped > 0
+        ? ` (${result.skipped} day${result.skipped > 1 ? 's' : ''} already marked)`
+        : '';
+
     await showSuccess({
-      title: 'Holiday Marked!',
-      text: `${formatDate(date)} marked as holiday — ${reason}.`,
+      title: result.added > 1 ? 'Holidays Marked!' : 'Holiday Marked!',
+      text:
+        result.added > 1
+          ? `${result.added} days marked as holiday (${formatHolidayRangeLabel(startDate, endDate)}) — ${reason}.${skippedNote}`
+          : `${formatDate(startDate)} marked as holiday — ${reason}.${skippedNote}`,
       autoCloseMs: 2500,
     });
   };
@@ -329,19 +362,37 @@ export default function Attendance() {
       .sort((a, b) => new Date(b.date) - new Date(a.date));
   }, [attendance, selectedStudentId, studentMonth]);
 
+  const studentMonthDays = useMemo(() => {
+    if (!selectedStudentId) return [];
+    return buildFullMonthAttendanceRows(
+      studentMonth,
+      studentMonthRecords,
+      holidays,
+      selectedStudentId
+    );
+  }, [selectedStudentId, studentMonth, studentMonthRecords, holidays]);
+
   const studentMonthStats = useMemo(() => {
-    const present = studentMonthRecords.filter((r) => isPresentStatus(r.status)).length;
-    const absent = studentMonthRecords.filter((r) => isAbsentStatus(r.status)).length;
-    const total = studentMonthRecords.length;
-    const pct = total > 0 ? (present / total) * 100 : 0;
-    return { present, absent, total, pct };
-  }, [studentMonthRecords]);
+    const present = studentMonthDays.filter((r) => r.status === DAY_STATUS.PRESENT).length;
+    const absent = studentMonthDays.filter((r) => r.status === DAY_STATUS.ABSENT).length;
+    const holiday = studentMonthDays.filter((r) => r.status === DAY_STATUS.HOLIDAY).length;
+    const notAdded = studentMonthDays.filter((r) => r.status === DAY_STATUS.NOT_ADDED).length;
+    const marked = present + absent;
+    const pct = marked > 0 ? (present / marked) * 100 : 0;
+    return { present, absent, holiday, notAdded, total: studentMonthDays.length, pct };
+  }, [studentMonthDays]);
 
   const selectedStudent = students.find((s) => s.id === selectedStudentId);
 
   const handleExportAttendance = async () => {
     if (!selectedStudent) return;
-    await downloadStudentAttendancePDF(selectedStudent, studentMonthRecords, studentMonth, settings);
+    await downloadStudentAttendancePDF(
+      selectedStudent,
+      studentMonthRecords,
+      studentMonth,
+      settings,
+      holidays
+    );
   };
 
   return (
@@ -585,7 +636,7 @@ export default function Attendance() {
                   <p className="text-[10px] text-slate-500 font-semibold uppercase">This Month</p>
                 </div>
               </div>
-              <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-50">
+              <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-50">
                 <div className="bg-emerald-50 rounded-xl p-2 text-center border border-emerald-100">
                   <p className="text-sm font-bold text-emerald-700">{studentMonthStats.present}</p>
                   <p className="text-[10px] text-emerald-600 font-semibold">Present</p>
@@ -594,11 +645,18 @@ export default function Attendance() {
                   <p className="text-sm font-bold text-red-700">{studentMonthStats.absent}</p>
                   <p className="text-[10px] text-red-600 font-semibold">Absent</p>
                 </div>
+                <div className="bg-amber-50 rounded-xl p-2 text-center border border-amber-100">
+                  <p className="text-sm font-bold text-amber-700">{studentMonthStats.holiday}</p>
+                  <p className="text-[10px] text-amber-600 font-semibold">Holiday</p>
+                </div>
                 <div className="bg-slate-50 rounded-xl p-2 text-center border border-slate-100">
-                  <p className="text-sm font-bold text-slate-700">{studentMonthStats.total}</p>
-                  <p className="text-[10px] text-slate-500 font-semibold">Total</p>
+                  <p className="text-sm font-bold text-slate-700">{studentMonthStats.notAdded}</p>
+                  <p className="text-[10px] text-slate-500 font-semibold">Not Added</p>
                 </div>
               </div>
+              <p className="text-[10px] text-slate-400 text-center mt-2">
+                {studentMonthStats.total} days in {formatMonth(studentMonth)}
+              </p>
               <Button
                 variant="outline"
                 fullWidth
@@ -612,24 +670,34 @@ export default function Attendance() {
 
           {!selectedStudentId ? (
             <EmptyState icon={CalendarCheck} title="Select a student" description="Choose a student to view their attendance history" />
-          ) : studentMonthRecords.length === 0 ? (
-            <EmptyState icon={CalendarCheck} title="No records" description={`No attendance marked for ${formatMonth(studentMonth)}`} />
           ) : (
-            studentMonthRecords.map((record) => (
-              <Card key={record.id}>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-slate-800">{formatDate(record.date)}</p>
-                    {isAbsentStatus(record.status) && record.reason && (
-                      <p className="text-xs text-red-600 mt-1">Reason: {record.reason}</p>
-                    )}
+            studentMonthDays.map((row) => {
+              const badgeVariant =
+                row.status === DAY_STATUS.PRESENT
+                  ? 'present'
+                  : row.status === DAY_STATUS.ABSENT
+                    ? 'absent'
+                    : row.status === DAY_STATUS.HOLIDAY
+                      ? 'holiday'
+                      : 'unmarked';
+
+              return (
+                <Card key={row.date}>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-800">{formatDate(row.date)}</p>
+                      {row.status === DAY_STATUS.ABSENT && row.reason && row.reason !== '—' && (
+                        <p className="text-xs text-red-600 mt-1">Reason: {row.reason}</p>
+                      )}
+                      {row.status === DAY_STATUS.HOLIDAY && row.reason && row.reason !== '—' && (
+                        <p className="text-xs text-amber-700 mt-1">{row.reason}</p>
+                      )}
+                    </div>
+                    <Badge variant={badgeVariant}>{row.label}</Badge>
                   </div>
-                  <Badge variant={isPresentStatus(record.status) ? 'present' : 'absent'}>
-                    {isPresentStatus(record.status) ? 'Present' : 'Absent'}
-                  </Badge>
-                </div>
-              </Card>
-            ))
+                </Card>
+              );
+            })
           )}
         </div>
       )}
@@ -681,12 +749,55 @@ export default function Attendance() {
           <div className="min-w-0">
             <p className="text-sm font-semibold text-slate-900">Tuition Closed</p>
             <p className="text-xs text-slate-500 mt-0.5">
-              Holiday on <span className="font-semibold text-slate-700">{formatDate(date)}</span>
+              Select one day or a date range for holidays
             </p>
           </div>
         </div>
 
         <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                From Date
+              </label>
+              <input
+                type="date"
+                value={holidayModal.startDate}
+                onChange={(e) => {
+                  const startDate = e.target.value;
+                  setHolidayModal((prev) => ({
+                    ...prev,
+                    startDate,
+                    endDate:
+                      prev.endDate && prev.endDate < startDate ? startDate : prev.endDate || startDate,
+                  }));
+                }}
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1.5">
+                To Date
+              </label>
+              <input
+                type="date"
+                value={holidayModal.endDate}
+                min={holidayModal.startDate}
+                onChange={(e) =>
+                  setHolidayModal((prev) => ({ ...prev, endDate: e.target.value }))
+                }
+                className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+              />
+            </div>
+          </div>
+
+          {getHolidayRangeDayCount(holidayModal.startDate, holidayModal.endDate) > 1 && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+              {getHolidayRangeDayCount(holidayModal.startDate, holidayModal.endDate)} days will be
+              marked: {formatHolidayRangeLabel(holidayModal.startDate, holidayModal.endDate)}
+            </p>
+          )}
+
           <Select
             label="Holiday Type"
             value={holidayModal.type}
@@ -721,7 +832,9 @@ export default function Attendance() {
             onClick={confirmHoliday}
             className="bg-amber-600 text-white border-transparent shadow-lg shadow-amber-600/20 active:bg-amber-700"
           >
-            Mark Holiday
+            {getHolidayRangeDayCount(holidayModal.startDate, holidayModal.endDate) > 1
+              ? `Mark ${getHolidayRangeDayCount(holidayModal.startDate, holidayModal.endDate)} Days`
+              : 'Mark Holiday'}
           </Button>
         </div>
       </Modal>

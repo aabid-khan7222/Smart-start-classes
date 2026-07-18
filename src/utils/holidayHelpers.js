@@ -1,4 +1,4 @@
-import { normalizeDate, getMonthFromDate } from './dateHelpers';
+import { normalizeDate, getMonthFromDate, getDateRange, formatDate } from './dateHelpers';
 import { HOLIDAY_TYPES } from './constants';
 
 export function normalizeHolidayType(type) {
@@ -27,4 +27,16 @@ export function getHolidayTypeLabel(type) {
   return normalizeHolidayType(type) === HOLIDAY_TYPES.PERSONAL
     ? 'Personal / Tuition Closed'
     : 'Public Holiday';
+}
+
+export function formatHolidayRangeLabel(startDate, endDate) {
+  const start = normalizeDate(startDate);
+  const end = normalizeDate(endDate || startDate);
+  if (!start) return '—';
+  if (!end || start === end) return formatDate(start);
+  return `${formatDate(start)} → ${formatDate(end)}`;
+}
+
+export function getHolidayRangeDayCount(startDate, endDate) {
+  return getDateRange(startDate, endDate).length;
 }

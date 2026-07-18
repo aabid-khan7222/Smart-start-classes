@@ -3,7 +3,7 @@ import { ATTENDANCE_STATUS } from '../utils/constants';
 import { generateId } from '../utils/storage';
 import { defaultSettings } from '../data/defaults';
 import { validatePaymentAmount } from '../utils/feeHelpers';
-import { normalizeDate } from '../utils/dateHelpers';
+import { normalizeDate, getDateRange } from '../utils/dateHelpers';
 import {
   normalizeAttendanceStatus,
   isSameStudentId,
@@ -197,30 +197,60 @@ export function DataProvider({ children }) {
   );
 
   const addHoliday = useCallback(
-    (date, reason, type = 'public') => {
-      const normalizedDate = normalizeDate(date);
+    (startDate, reason, type = 'public', endDate = null) => {
       const trimmedReason = String(reason || '').trim();
-      if (!normalizedDate || !trimmedReason) {
-        return { success: false, error: 'Date and reason are required' };
+      const dates = getDateRange(startDate, endDate || startDate);
+
+      if (!dates.length || !trimmedReason) {
+        return { success: false, error: 'Valid date range and reason are required' };
       }
 
-      let result = { success: true };
+      if (normalizeDate(endDate || startDate) < normalizeDate(startDate)) {
+        return { success: false, error: 'End date cannot be before start date' };
+      }
+
+      let result = { success: true, added: 0, skipped: 0, holidays: [] };
 
       setHolidays((prev) => {
-        const exists = prev.some((h) => normalizeDate(h.date) === normalizedDate);
-        if (exists) {
-          result = { success: false, error: 'A holiday is already marked for this date' };
+        const existingDates = new Set(prev.map((h) => normalizeDate(h.date)));
+        const holidayType = normalizeHolidayType(type);
+        const newHolidays = [];
+        let skipped = 0;
+
+        dates.forEach((day) => {
+          if (existingDates.has(day)) {
+            skipped += 1;
+            return;
+          }
+          newHolidays.push({
+            id: generateId(),
+            date: day,
+            reason: trimmedReason,
+            type: holidayType,
+          });
+        });
+
+        if (newHolidays.length === 0) {
+          result = {
+            success: false,
+            error:
+              dates.length === 1
+                ? 'A holiday is already marked for this date'
+                : 'All selected dates are already marked as holidays',
+            added: 0,
+            skipped,
+          };
           return prev;
         }
 
-        const holiday = {
-          id: generateId(),
-          date: normalizedDate,
-          reason: trimmedReason,
-          type: normalizeHolidayType(type),
+        result = {
+          success: true,
+          added: newHolidays.length,
+          skipped,
+          holidays: newHolidays,
+          holiday: newHolidays[0],
         };
-        result = { success: true, holiday };
-        return [...prev, holiday];
+        return [...prev, ...newHolidays];
       });
 
       return result;

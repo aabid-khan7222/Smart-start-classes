@@ -64,6 +64,27 @@ export function getDaysInMonth(monthStr) {
   return eachDayOfInterval({ start, end }).map((d) => format(d, 'yyyy-MM-dd'));
 }
 
+/** Inclusive date range as yyyy-MM-dd list. Returns [] if invalid. */
+export function getDateRange(startDate, endDate) {
+  const start = normalizeDate(startDate);
+  const end = normalizeDate(endDate || startDate);
+  if (!start || !end) return [];
+
+  try {
+    const startParsed = parseISO(start);
+    const endParsed = parseISO(end);
+    if (Number.isNaN(startParsed.getTime()) || Number.isNaN(endParsed.getTime())) {
+      return [];
+    }
+    if (endParsed < startParsed) return [];
+    return eachDayOfInterval({ start: startParsed, end: endParsed }).map((d) =>
+      format(d, 'yyyy-MM-dd')
+    );
+  } catch {
+    return [];
+  }
+}
+
 export function isCurrentMonth(monthStr) {
   return monthStr === getCurrentMonth();
 }

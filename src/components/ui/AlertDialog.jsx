@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { CheckCircle2, AlertTriangle, XCircle, Info } from 'lucide-react';
 import Button from './Button';
 
@@ -39,6 +40,9 @@ export default function AlertDialog({
   useEffect(() => {
     if (!isOpen) return undefined;
 
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     const onKeyDown = (event) => {
       if (event.key === 'Escape' && showCancel) {
         onCancel?.();
@@ -46,25 +50,29 @@ export default function AlertDialog({
     };
 
     document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
   }, [isOpen, showCancel, onCancel]);
 
   if (!isOpen) return null;
 
   const { Icon, ring, color } = ICONS[type] || ICONS.info;
 
-  return (
+  return createPortal(
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[210] flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby="alert-title"
     >
       <div
-        className="absolute inset-0 bg-slate-900/50 backdrop-blur-sm animate-fade-in"
+        className="absolute inset-0 bg-slate-900/55 animate-fade-in"
         onClick={showCancel ? onCancel : undefined}
+        aria-hidden="true"
       />
-      <div className="relative w-full max-w-[340px] bg-white rounded-2xl shadow-2xl animate-scale-in overflow-hidden">
+      <div className="relative w-full max-w-[340px] bg-white rounded-2xl shadow-[0_20px_50px_-12px_rgba(15,23,42,0.35)] animate-scale-in overflow-hidden">
         <div className="px-6 pt-8 pb-6 text-center">
           <div
             className={`w-16 h-16 rounded-full mx-auto mb-4 flex items-center justify-center ${ring}`}
@@ -78,7 +86,7 @@ export default function AlertDialog({
             <p className="text-sm text-slate-500 mt-2 leading-relaxed">{text}</p>
           )}
         </div>
-        <div className={`flex gap-3 px-6 pb-6 ${showCancel ? '' : ''}`}>
+        <div className="flex gap-3 px-6 pb-6">
           {showCancel && (
             <Button variant="outline" fullWidth onClick={onCancel}>
               {cancelText}
@@ -102,6 +110,7 @@ export default function AlertDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

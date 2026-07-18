@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Shared JSON store (created by server)
+server/data/
+
 # Environment variables
 .env
 .env.local

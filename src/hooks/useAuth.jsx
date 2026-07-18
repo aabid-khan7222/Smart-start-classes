@@ -1,5 +1,4 @@
 import { createContext, useContext, useCallback, useMemo, useState, useEffect } from 'react';
-import { useLocalStorage } from './useLocalStorage';
 import { STORAGE_KEYS } from '../utils/constants';
 import { defaultAuthCredentials } from '../data/defaults';
 import {
@@ -14,17 +13,20 @@ import {
   readRememberMePreference,
   writeAuthSession,
 } from '../utils/authSession';
+import { useSharedStore } from './useSharedStore';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [auth, setAuth] = useLocalStorage(STORAGE_KEYS.AUTH, defaultAuthCredentials);
+  const { store, persist } = useSharedStore();
   const [session, setSessionState] = useState(() => readAuthSession());
-  const [rememberMePreference, setRememberMePreference] = useState(() => readRememberMePreference());
+  const [rememberMePreference, setRememberMePreference] = useState(() =>
+    readRememberMePreference()
+  );
 
   const credentials = useMemo(
-    () => normalizeAuthCredentials(auth, defaultAuthCredentials),
-    [auth]
+    () => normalizeAuthCredentials(store.auth, defaultAuthCredentials),
+    [store.auth]
   );
 
   const isAuthenticated = Boolean(session?.username);
@@ -105,7 +107,10 @@ export function AuthProvider({ children }) {
         password: newPassword ? newPassword : credentials.password,
       };
 
-      setAuth(updated);
+      persist((prev) => ({
+        ...prev,
+        auth: updated,
+      }));
 
       if (session) {
         persistSession(
@@ -120,7 +125,7 @@ export function AuthProvider({ children }) {
 
       return { success: true };
     },
-    [credentials, session, rememberMePreference, setAuth, persistSession]
+    [credentials, session, rememberMePreference, persist, persistSession]
   );
 
   const value = useMemo(

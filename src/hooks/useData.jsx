@@ -1,6 +1,5 @@
-import { createContext, useContext } from 'react';
-import { useLocalStorage } from './useLocalStorage';
-import { STORAGE_KEYS, ATTENDANCE_STATUS } from '../utils/constants';
+import { createContext, useCallback, useContext, useMemo } from 'react';
+import { ATTENDANCE_STATUS } from '../utils/constants';
 import { generateId } from '../utils/storage';
 import { defaultSettings } from '../data/defaults';
 import { validatePaymentAmount } from '../utils/feeHelpers';
@@ -9,188 +8,276 @@ import {
   normalizeAttendanceStatus,
   isSameStudentId,
 } from '../utils/attendanceHelpers';
+import { useSharedStore } from './useSharedStore';
 
 const DataContext = createContext(null);
 
 export function DataProvider({ children }) {
-  const [students, setStudents] = useLocalStorage(STORAGE_KEYS.STUDENTS, []);
-  const [attendance, setAttendance] = useLocalStorage(STORAGE_KEYS.ATTENDANCE, []);
-  const [payments, setPayments] = useLocalStorage(STORAGE_KEYS.FEE_PAYMENTS, []);
-  const [settings, setSettings] = useLocalStorage(STORAGE_KEYS.SETTINGS, defaultSettings);
+  const { store, persist } = useSharedStore();
 
-  const addStudent = (data) => {
-    const student = { ...data, id: generateId(), createdAt: new Date().toISOString() };
-    setStudents((prev) => [student, ...prev]);
-    return student;
-  };
+  const students = store.students;
+  const attendance = store.attendance;
+  const payments = store.fee_payments;
+  const settings = store.settings;
 
-  const updateStudent = (id, data) => {
-    setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, ...data } : s)));
-  };
+  const setStudents = useCallback(
+    (updater) => {
+      persist((prev) => ({
+        ...prev,
+        students: typeof updater === 'function' ? updater(prev.students) : updater,
+      }));
+    },
+    [persist]
+  );
 
-  const deleteStudent = (id) => {
-    setStudents((prev) => prev.filter((s) => s.id !== id));
-  };
+  const setAttendance = useCallback(
+    (updater) => {
+      persist((prev) => ({
+        ...prev,
+        attendance: typeof updater === 'function' ? updater(prev.attendance) : updater,
+      }));
+    },
+    [persist]
+  );
 
-  const getStudent = (id) => students.find((s) => s.id === id);
+  const setPayments = useCallback(
+    (updater) => {
+      persist((prev) => ({
+        ...prev,
+        fee_payments: typeof updater === 'function' ? updater(prev.fee_payments) : updater,
+      }));
+    },
+    [persist]
+  );
 
-  const markAttendance = (studentId, date, status, reason = '') => {
-    const normalizedDate = normalizeDate(date);
-    if (!normalizedDate || !studentId) return false;
+  const setSettings = useCallback(
+    (updater) => {
+      persist((prev) => ({
+        ...prev,
+        settings: typeof updater === 'function' ? updater(prev.settings) : updater,
+      }));
+    },
+    [persist]
+  );
 
-    const normalizedStatus = normalizeAttendanceStatus(status);
-    if (!normalizedStatus) return false;
+  const addStudent = useCallback(
+    (data) => {
+      const student = { ...data, id: generateId(), createdAt: new Date().toISOString() };
+      setStudents((prev) => [student, ...prev]);
+      return student;
+    },
+    [setStudents]
+  );
 
-    setAttendance((prev) => {
-      const existingIdx = prev.findIndex(
-        (a) =>
-          isSameStudentId(a.studentId, studentId) &&
-          normalizeDate(a.date) === normalizedDate
-      );
+  const updateStudent = useCallback(
+    (id, data) => {
+      setStudents((prev) => prev.map((s) => (s.id === id ? { ...s, ...data } : s)));
+    },
+    [setStudents]
+  );
 
-      if (existingIdx >= 0) {
-        const updated = [...prev];
-        const record = { ...updated[existingIdx], status: normalizedStatus };
-        if (normalizedStatus === ATTENDANCE_STATUS.ABSENT) {
-          record.reason = reason || '';
-        } else {
-          delete record.reason;
-        }
-        updated[existingIdx] = record;
-        return updated;
-      }
+  const deleteStudent = useCallback(
+    (id) => {
+      setStudents((prev) => prev.filter((s) => s.id !== id));
+    },
+    [setStudents]
+  );
 
-      const record = {
-        id: generateId(),
-        studentId: String(studentId),
-        date: normalizedDate,
-        status: normalizedStatus,
-      };
-      if (normalizedStatus === ATTENDANCE_STATUS.ABSENT) {
-        record.reason = reason || '';
-      }
-      return [...prev, record];
-    });
+  const getStudent = useCallback((id) => students.find((s) => s.id === id), [students]);
 
-    return true;
-  };
+  const markAttendance = useCallback(
+    (studentId, date, status, reason = '') => {
+      const normalizedDate = normalizeDate(date);
+      if (!normalizedDate || !studentId) return false;
 
-  const saveBulkAttendance = (records, date) => {
-    const normalizedDate = normalizeDate(date);
-    if (!normalizedDate || !records?.length) return false;
+      const normalizedStatus = normalizeAttendanceStatus(status);
+      if (!normalizedStatus) return false;
 
-    const normalizedRecords = records
-      .map((r) => ({
-        studentId: String(r.studentId),
-        status: normalizeAttendanceStatus(r.status),
-        reason: r.reason || '',
-      }))
-      .filter((r) => r.studentId && r.status);
-
-    if (!normalizedRecords.length) return false;
-
-    setAttendance((prev) => {
-      const updatedStudentIds = new Set(normalizedRecords.map((r) => r.studentId));
-
-      const kept = prev.filter(
-        (a) =>
-          !(
-            normalizeDate(a.date) === normalizedDate &&
-            updatedStudentIds.has(String(a.studentId))
-          )
-      );
-
-      const newRecords = normalizedRecords.map((r) => {
-        const existing = prev.find(
+      setAttendance((prev) => {
+        const existingIdx = prev.findIndex(
           (a) =>
-            isSameStudentId(a.studentId, r.studentId) &&
+            isSameStudentId(a.studentId, studentId) &&
             normalizeDate(a.date) === normalizedDate
         );
 
-        const record = {
-          id: existing?.id ?? generateId(),
-          studentId: r.studentId,
-          date: normalizedDate,
-          status: r.status,
-        };
-
-        if (r.status === ATTENDANCE_STATUS.ABSENT) {
-          record.reason = r.reason || '';
+        if (existingIdx >= 0) {
+          const updated = [...prev];
+          const record = { ...updated[existingIdx], status: normalizedStatus };
+          if (normalizedStatus === ATTENDANCE_STATUS.ABSENT) {
+            record.reason = reason || '';
+          } else {
+            delete record.reason;
+          }
+          updated[existingIdx] = record;
+          return updated;
         }
 
-        return record;
+        const record = {
+          id: generateId(),
+          studentId: String(studentId),
+          date: normalizedDate,
+          status: normalizedStatus,
+        };
+        if (normalizedStatus === ATTENDANCE_STATUS.ABSENT) {
+          record.reason = reason || '';
+        }
+        return [...prev, record];
       });
 
-      return [...kept, ...newRecords];
-    });
+      return true;
+    },
+    [setAttendance]
+  );
 
-    return true;
-  };
+  const saveBulkAttendance = useCallback(
+    (records, date) => {
+      const normalizedDate = normalizeDate(date);
+      if (!normalizedDate || !records?.length) return false;
 
-  const addPayment = (data) => {
-    const student = students.find((s) => s.id === data.studentId);
-    if (!student) {
-      return { success: false, error: 'Student not found' };
-    }
+      const normalizedRecords = records
+        .map((r) => ({
+          studentId: String(r.studentId),
+          status: normalizeAttendanceStatus(r.status),
+          reason: r.reason || '',
+        }))
+        .filter((r) => r.studentId && r.status);
 
-    let addedPayment = null;
-    let validationError = null;
+      if (!normalizedRecords.length) return false;
 
-    setPayments((prev) => {
-      const validation = validatePaymentAmount(
-        student,
-        data.paymentMonth,
-        data.amountPaid,
-        prev
-      );
+      setAttendance((prev) => {
+        const updatedStudentIds = new Set(normalizedRecords.map((r) => r.studentId));
 
-      if (!validation.valid) {
-        validationError = validation.error;
-        return prev;
+        const kept = prev.filter(
+          (a) =>
+            !(
+              normalizeDate(a.date) === normalizedDate &&
+              updatedStudentIds.has(String(a.studentId))
+            )
+        );
+
+        const newRecords = normalizedRecords.map((r) => {
+          const existing = prev.find(
+            (a) =>
+              isSameStudentId(a.studentId, r.studentId) &&
+              normalizeDate(a.date) === normalizedDate
+          );
+
+          const record = {
+            id: existing?.id ?? generateId(),
+            studentId: r.studentId,
+            date: normalizedDate,
+            status: r.status,
+          };
+
+          if (r.status === ATTENDANCE_STATUS.ABSENT) {
+            record.reason = r.reason || '';
+          }
+
+          return record;
+        });
+
+        return [...kept, ...newRecords];
+      });
+
+      return true;
+    },
+    [setAttendance]
+  );
+
+  const addPayment = useCallback(
+    (data) => {
+      const student = students.find((s) => s.id === data.studentId);
+      if (!student) {
+        return { success: false, error: 'Student not found' };
       }
 
-      addedPayment = {
-        ...data,
-        amountPaid: validation.amount,
-        id: generateId(),
-      };
-      return [addedPayment, ...prev];
-    });
+      let addedPayment = null;
+      let validationError = null;
 
-    if (validationError) {
-      return { success: false, error: validationError };
-    }
+      setPayments((prev) => {
+        const validation = validatePaymentAmount(
+          student,
+          data.paymentMonth,
+          data.amountPaid,
+          prev
+        );
 
-    return { success: true, payment: addedPayment };
-  };
+        if (!validation.valid) {
+          validationError = validation.error;
+          return prev;
+        }
 
-  const deletePayment = (id) => {
-    setPayments((prev) => prev.filter((p) => p.id !== id));
-  };
+        addedPayment = {
+          ...data,
+          amountPaid: validation.amount,
+          id: generateId(),
+        };
+        return [addedPayment, ...prev];
+      });
 
-  const updateSettings = (data) => {
-    setSettings((prev) => ({ ...defaultSettings, ...prev, ...data }));
-  };
+      if (validationError) {
+        return { success: false, error: validationError };
+      }
 
-  const value = {
-    students,
-    setStudents,
-    addStudent,
-    updateStudent,
-    deleteStudent,
-    getStudent,
-    attendance,
-    setAttendance,
-    markAttendance,
-    saveBulkAttendance,
-    payments,
-    setPayments,
-    addPayment,
-    deletePayment,
-    settings,
-    setSettings,
-    updateSettings,
-  };
+      return { success: true, payment: addedPayment };
+    },
+    [students, setPayments]
+  );
+
+  const deletePayment = useCallback(
+    (id) => {
+      setPayments((prev) => prev.filter((p) => p.id !== id));
+    },
+    [setPayments]
+  );
+
+  const updateSettings = useCallback(
+    (data) => {
+      setSettings((prev) => ({ ...defaultSettings, ...prev, ...data }));
+    },
+    [setSettings]
+  );
+
+  const value = useMemo(
+    () => ({
+      students,
+      setStudents,
+      addStudent,
+      updateStudent,
+      deleteStudent,
+      getStudent,
+      attendance,
+      setAttendance,
+      markAttendance,
+      saveBulkAttendance,
+      payments,
+      setPayments,
+      addPayment,
+      deletePayment,
+      settings,
+      setSettings,
+      updateSettings,
+    }),
+    [
+      students,
+      setStudents,
+      addStudent,
+      updateStudent,
+      deleteStudent,
+      getStudent,
+      attendance,
+      setAttendance,
+      markAttendance,
+      saveBulkAttendance,
+      payments,
+      setPayments,
+      addPayment,
+      deletePayment,
+      settings,
+      setSettings,
+      updateSettings,
+    ]
+  );
 
   return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }

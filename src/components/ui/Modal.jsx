@@ -1,23 +1,59 @@
+import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 
 export default function Modal({ isOpen, onClose, title, children }) {
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') onClose?.();
+    };
+
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center">
-      <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full max-w-[480px] bg-white rounded-t-3xl shadow-2xl animate-slide-up max-h-[90dvh] overflow-hidden flex flex-col safe-bottom">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 shrink-0">
-          <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-title"
+    >
+      {/* Solid dim overlay only — no backdrop-blur (breaks on many mobile browsers) */}
+      <div
+        className="absolute inset-0 bg-slate-900/55 animate-fade-in"
+        onClick={onClose}
+        aria-hidden="true"
+      />
+
+      <div className="relative w-full max-w-[360px] bg-white rounded-2xl shadow-[0_20px_50px_-12px_rgba(15,23,42,0.35)] animate-scale-in overflow-hidden">
+        <div className="flex items-center justify-between gap-3 px-5 pt-5 pb-3">
+          <h2 id="modal-title" className="text-base font-bold text-slate-900 tracking-tight">
+            {title}
+          </h2>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl bg-slate-100 text-slate-500 active:bg-slate-200"
+            className="shrink-0 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 active:bg-slate-200 transition-colors"
+            aria-label="Close"
           >
-            <X size={18} />
+            <X size={18} strokeWidth={2.25} />
           </button>
         </div>
-        <div className="overflow-y-auto flex-1 p-5">{children}</div>
+
+        <div className="px-5 pb-5">{children}</div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

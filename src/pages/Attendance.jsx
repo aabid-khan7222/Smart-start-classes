@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { CalendarCheck, Save, Download } from 'lucide-react';
+import { CalendarCheck, Save, Download, UserX } from 'lucide-react';
 import { PageHeader } from '../components/ui/Section';
 import Button from '../components/ui/Button';
 import Card from '../components/ui/Card';
@@ -473,9 +473,19 @@ export default function Attendance() {
       )}
 
       <Modal isOpen={absentModal.open} onClose={closeAbsentModal} title="Absence Reason">
-        <p className="text-sm text-slate-600 mb-4">
-          Why is <strong>{absentModal.studentName}</strong> absent on <strong>{formatDate(date)}</strong>?
-        </p>
+        <div className="flex items-start gap-3 mb-4 rounded-xl bg-red-50/80 border border-red-100 px-3.5 py-3">
+          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+            <UserX size={18} strokeWidth={2.25} />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-slate-900 truncate">
+              {absentModal.studentName}
+            </p>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Absent on <span className="font-semibold text-slate-700">{formatDate(date)}</span>
+            </p>
+          </div>
+        </div>
 
         <Input
           label="Reason"
@@ -483,12 +493,21 @@ export default function Attendance() {
           onChange={(e) => {
             setAbsentModal((prev) => ({ ...prev, reason: e.target.value }));
           }}
-          placeholder="Enter absence reason..."
+          placeholder="e.g. Sick leave, family emergency..."
+          autoFocus
         />
 
         <div className="flex gap-3 mt-5">
-          <Button variant="outline" fullWidth onClick={closeAbsentModal}>Cancel</Button>
-          <Button variant="danger" fullWidth onClick={confirmAbsent}>Mark Absent</Button>
+          <Button variant="outline" fullWidth onClick={closeAbsentModal}>
+            Cancel
+          </Button>
+          <Button
+            fullWidth
+            onClick={confirmAbsent}
+            className="bg-red-600 text-white border-transparent shadow-lg shadow-red-600/20 active:bg-red-700"
+          >
+            Mark Absent
+          </Button>
         </div>
       </Modal>
     </div>
